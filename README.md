@@ -10,19 +10,19 @@ This repo contains tools for logging and configuring with the Anello A-1.
 - requirements:
     - Python 3.9
     - python dependencies: install with "pip install -r requirements.txt"
-        cutie 0.2.2
-        numpy 1.19.3
-        matplotlib 3.3.3
-        pyserial 3.5
+        - cutie 0.2.2
+        - numpy 1.19.3
+        - matplotlib 3.3.3
+        - pyserial 3.5
     - Troubleshooting numpy / matplotlib issue in Linux:
-        on Raspberry Pi running Linux, the versions of matplotlib and numpy installed with pip did not work
-        To fix this, do:
-            pip install cutie
-            pip install pyserial
-            sudo apt install matplotlib
-            sudo apt install numpy
-        or if you already installed requirements.txt, do:
-            pip uninstall matplotlib
-            pip uninstall numpy
-            sudo apt install matplotlib
-            sudo apt install numpy
+        - on Raspberry Pi running Linux, the versions of matplotlib and numpy installed with pip did not work
+        - To fix this, do:
+            - pip install cutie
+            - pip install pyserial
+            - sudo apt install matplotlib
+            - sudo apt install numpy
+        - or if you already installed requirements.txt, do:
+            - pip uninstall matplotlib
+            - pip uninstall numpy
+            - sudo apt install matplotlib
+            - sudo apt install numpy
