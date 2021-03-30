@@ -5,7 +5,7 @@ This repo contains tools for logging and configuring with the Anello A-1.
         - usage: python user_program.py
     - board_tools/graph_demo.py - graphing demo. will integrate this into user tool.
         - usage: python graph_demo.py
-    -board_tools/src/tools: library for communicating with the A-1, used by the other tools
+    - board_tools/src/tools: library for communicating with the A-1, used by the other tools
 
 - requirements:
     - Python 3.9
