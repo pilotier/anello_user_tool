@@ -24,14 +24,3 @@ board.clear_inputs()
 collector = Collector(board=board, log_messages=True, message_file_name=file_name,
                       log_debug=False, debug_file_name="debug.txt", log_detailed=False)
 collector.start_reading()
-
-# does it need any cleanup steps? If so, need signal from user program to stop and clean up.
-# or just terminate from user program
-
-# time.sleep(10)
-# collector.stop_reading()
-# board.release_connections()
-# #collector.plot_everything()
-# #collector.plot_all_gps(ncols=3)
-# collector.log_final_statistics()
-# collector.stop_logging()
