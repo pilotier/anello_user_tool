@@ -106,7 +106,7 @@ FORMAT_PNG = [
     # number of satellites      20
 
 FORMAT_GPS = [
-    ("imu_time_ms", int),
+    ("imu_time_ms", float),
     ("gps_time_ms", float),
     ("lat", float),
     ("lon", float),
@@ -125,5 +125,21 @@ FORMAT_GPS = [
 
 FORMAT_ODO = [
     ("speed", float)
+]
+
+#most of these can be blank if not initialized
+FORMAT_INS = [
+    ("IMU_Time", int),
+    ("GPS_Time", int),
+    ("heading_initialized", int),
+    ("position_lat", float),
+    ("position_lon", float),
+    ("position_alt", float),
+    ("velocity_0", float),
+    ("velocity_1", float),
+    ("velocity_2", float),
+    ("attitude_0", float),
+    ("attitude_1", float),
+    ("attitude_2", float)
 ]
 

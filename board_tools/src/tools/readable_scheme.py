@@ -108,7 +108,8 @@ class ReadableScheme(Scheme):
             b'RST': self.set_payload_fields_RST,
             b'PNG': self.set_payload_fields_PNG,
             b'ECH': self.set_payload_fields_ECH,
-            b'ODO': self.set_payload_fields_ODO  #TODO- can remove this when odo data is added to data stream
+            b'ODO': self.set_payload_fields_ODO,  #TODO- can remove this when odo data is added to data stream
+            b'INS': self.set_payload_fields_INS
         }
         decoderFunc = decoders.get(msgtype)
         if decoderFunc:
@@ -183,6 +184,9 @@ class ReadableScheme(Scheme):
 
     def set_payload_fields_ODO(self, message, payload):
         self.set_fields_from_list(message, FORMAT_ODO, payload)
+
+    def set_payload_fields_INS(self, message, payload):
+        self.set_fields_from_list(message, FORMAT_INS, payload)
 
     #config message: mode is read or write
     #write has name, value pairs:   APCFG,w,odr,100,msg,IMU  is CFG with mode = write, odr = 10, msg = IMU

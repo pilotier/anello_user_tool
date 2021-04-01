@@ -120,10 +120,14 @@ class Collector:
             if message.msgtype == b'GPS':
                 self.add_delta_t_gps(message)
                 self.gps_messages.append(message)
-            else:
+            elif message.msgtype in [b'CAL', b'IMU']:
                 self.add_delta_t(message)
                 self.transform_message_data(message)
                 self.messages.append(message)
+            elif message.msgtype == b'INS':
+                # could collect these into a list too.
+                # and could get delta t of the IMU time or the GPS time. probably IMU time
+                pass
             if self.log_messages_detailed:
                 self.log_line("Message: " + str(message.__dict__))
             else:
