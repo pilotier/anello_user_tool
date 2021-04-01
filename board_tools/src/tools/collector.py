@@ -15,7 +15,7 @@ try:  # importing from inside the package
     import connection
     from config.board_config import *
 except ModuleNotFoundError:  # importing from outside the package
-    import tools.readable_scheme
+    import tools.readable_scheme as readable_scheme
     from tools.scheme import Message
     import tools.connection
     from tools.config.board_config import *
@@ -131,7 +131,7 @@ class Collector:
             if self.log_messages_detailed:
                 self.log_line("Message: " + str(message.__dict__))
             else:
-                self.log_line(message.data.decode())
+                self.log_line((readable_scheme.READABLE_START+message.data).decode())
             self.statistics.count_valid(message)
         else:
             self.invalid_messages.append(message)
