@@ -6,7 +6,7 @@ READABLE_CHECKSUM_SEPARATOR = b'*'
 READABLE_PAYLOAD_SEPARATOR = b','
 OUR_TALKER = b'AP'
 
-#for CFG type
+#for CFG and FLA type
 WRITE_RAM = b'w'
 READ_RAM = b'r'
 WRITE_FLASH = b'W'
@@ -120,7 +120,8 @@ FORMAT_GPS = [
     ("fix-type", int),
     ("numSV", int),
     ("spdacc", float),
-    ("hdsacc", float)
+    ("hdsacc", float),
+    ("carrSoln", int)
 ]
 
 FORMAT_ODO = [
@@ -142,4 +143,5 @@ FORMAT_INS = [
     ("attitude_1", float),
     ("attitude_2", float)
 ]
-
+#APINS,42134,,0,,,,,,,-4.052249,-2.304255,-0.018574,*5E
+#,1,2,3,4,5,6,7,8,9,10,11,12,13*5E

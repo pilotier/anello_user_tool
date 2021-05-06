@@ -23,28 +23,29 @@ class ReadableScheme(Scheme):
         # UDPConnection doesn't have a read_until, it reads entire lines. So need different handling here
         # TODO - moving read_one_message into connection class might be more tidy. then it needs to know start/end codes
         if type(connection) is UDPConnection:
-            data = connection.read()
+            data = connection.readall() #TODO does it need a read until end char function?
         else:
             before = connection.read_until(READABLE_START)
-            #TODO can handle partial start here
+            #TODO can handle partial start on whatever came before start code
             data = connection.read_until(READABLE_END)
         if not data:
             return None
-        if data[:len(READABLE_START)] == READABLE_START: # chop off start code if present
+        if data[:len(READABLE_START)] == READABLE_START: #chop off start code if present
             data = data[len(READABLE_START):]
-        if data[-len(READABLE_END):] == READABLE_END: # chop off end code if present
+        if data[-len(READABLE_END):] == READABLE_END: #chop off end code if present
             data = data[:-len(READABLE_END)]
         else:
-            pass  #TODO if no end code, could handle partial read here or give an error
+            pass #TODO if no end code, could handle partial read or give an error
         if data:
             message = Message()
             self.set_fields_general(message, data)
             return message
 
-    # write a single message to the connection
+    #write a single message to the connection
     def write_one_message(self, message, connection):
         data = READABLE_START + self.build_message_general(message) + READABLE_END
         connection.write(data)
+        #TODO check response, handle errors
 
     def set_fields_general(self, message, data):
         try:
@@ -149,8 +150,9 @@ class ReadableScheme(Scheme):
         self.set_fields_from_list(message, FORMAT_ERR, payload)
 
     #CFG response: could have cfg data in response to CFG read
-    #CFG write - some confirmation message or error
+    #for CFG write - some confirmation message or error
     #all cfg fields are name, then value
+    #TODO figure out type conversions
     def set_payload_fields_with_names(self, message, payload):
         separated = payload.split(READABLE_PAYLOAD_SEPARATOR)
         configurations = {}
@@ -159,7 +161,6 @@ class ReadableScheme(Scheme):
             cfg_value = separated[i+1]
             configurations[cfg_name] = cfg_value
         message.configurations = configurations
-
 
     def set_payload_fields_VER(self, message, payload):
         self.set_fields_from_list(message, FORMAT_VER, payload)
@@ -205,7 +206,8 @@ class ReadableScheme(Scheme):
             raise Exception("unknown mode for CFG message")
         return data
 
-    # many messages have no fields, mostly if they are requests(requested resource is the message type)
+
+    #many messages have no fields, mostly if they are requests(requested resource is the message type)
     def build_payload_no_fields(self, message):
         return None
 
@@ -244,14 +246,14 @@ class ReadableScheme(Scheme):
                     setattr(message, var_name+"_minutes", seconds_part)
                     pass
                 else: 
-                    # regular case- use a python type
+                    #regular case- use a python type
                     value = var_type(part)
                     setattr(message, var_name, value)
 
-    # compute the checksum as an int
+    #compute the checksum as an int
     def compute_checksum(self, data):
         total = 0
-        for num in data:  # this treats each byte as an integer
+        for num in data: #this treats each byte as an integer
             total ^= num
         return total
 

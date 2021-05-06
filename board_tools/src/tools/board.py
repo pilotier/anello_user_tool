@@ -51,6 +51,24 @@ class IMUBoard:
             board.write_connection_settings()
         return board
 
+    #initialize on udp. TODO - could put cache options here too.
+    @classmethod
+    def from_udp(cls, ip, data_port, control_port):
+        board = cls()
+        try:
+            if data_port:
+                board.data_connection = UDPConnection(ip, UDP_LOCAL_DATA_PORT, data_port)
+            else:
+                board.data_connection = DummyConnection()
+            if control_port:
+                board.control_connection = UDPConnection(ip, UDP_LOCAL_CONFIG_PORT, control_port)
+            else:
+                board.control_connection = DummyConnection()
+        except Exception as e:
+            print(e)
+            return None
+        return board
+
     def read_connection_settings(self):
         try:
             cache_path = os.path.join(os.path.dirname(__file__), CONNECTION_CACHE)
@@ -325,3 +343,9 @@ class IMUBoard:
         m = Message({'msgtype': b'ODO', 'speed': speed})
         return self.send_control_no_wait(m)
 
+    # enable odometer config in ram or flash - need this for test setup since odo=off can't set to other values
+    def enable_odo_ram(self):
+        return self.set_cfg({"odo": b'on'})
+
+    def enable_odo_flash(self):
+        return self.set_cfg_flash({"odo": b'off'})

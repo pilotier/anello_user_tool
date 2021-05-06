@@ -8,7 +8,10 @@ except ModuleNotFoundError:  # importing from outside the package
 from builtins import input
 import socket
 import sys
+import select
 
+
+READ_SIZE = 1024 # excessively large to get whole buffer
 
 # abstract connection class
 class Connection(ABC):
@@ -18,8 +21,14 @@ class Connection(ABC):
 	def read(self, size=1):
 		raise Exception("base or dummy Connection has no read")
 
+	def readall(self):
+		raise Exception("base or dummy Connection has no readall")
+
 	def read_until(self, expected='\n', size=None):
 		raise Exception("base or dummy Connection has no read_until")
+
+	def read_ready(self):
+		pass
 
 	def write(self, data):
 		raise Exception("base or dummy Connection has no write")
@@ -71,8 +80,16 @@ class SerialConnection(Connection):
 	def read(self, size=1):
 		return self.connection.read(size)
 
+	def readall(self):
+		#fixed size read might not be enough sometimes
+		return self.connection.read(self.connection.in_waiting)
+		#return self.connection.read(READ_SIZE)
+
 	def read_until(self, expected='\n', size=None):
 		return self.connection.read_until(expected, size)
+
+	def read_ready(self):
+		return self.connection.in_waiting > 0
 
 	def write(self, data):
 		return self.connection.write(data)
@@ -124,19 +141,24 @@ class UDPConnection(Connection):
 		# except socket.error:
 		# 	print('Failed to create socket')
 
-	def read(self):
-		reply = None
+	def read(self, size=1):
 		try:
-			reply, addr = self.sock.recvfrom(1024) # buffsize < message length will error
+			reply, addr = self.sock.recvfrom(size) # buffsize < message length will error
+			return reply
 		except Exception as e:
-			print("error: "+str(e))
-
+			return None
 		# need internal buffer to read smaller amounts?
-		return reply
+
+	def readall(self):
+		return self.read(READ_SIZE)
 
 	def read_until(self, expected='\n', size=None):
 		# either need a sock read_until method, or loop reading one at a time until expected reached
 		pass
+
+	def read_ready(self):
+		reads, writes, errors = select.select([self.sock], [], [], 0)
+		return reads != []
 
 	def write(self, data):
 		self.sock.sendto(data, self.addr)
@@ -153,10 +175,23 @@ class UDPConnection(Connection):
 	def __str__(self):
 		return type(self).__name__ +": "+str(self.__dict__)
 
+	# def set_port(self, port):
+	# 	pass
+	#
+	# def get_port(self):
+	# 	pass
+	#
+	# def set_timeout(self):
+	# 	pass
+	#
+	# def get_timeout(self):
+	# 	pass
+
 
 # fake a serial connection to read byte data from a file
 # does not use an actual or virtual com port, just writes/reads file.
 class FileReaderConnection(Connection):
+	# TODO check if it's ok for init to have different arguments. should it emulate timeout behavior?
 	def __init__(self, filename):
 		# open the file to read bytes
 		self.filename = filename
@@ -205,3 +240,6 @@ class FileWriterConnection(Connection):
 
 	def close(self):
 		self.writer.close()
+
+# TODO use a virtual port pair with a file reader/writer on the other end?
+# then, can pass the non-file end as a com port for SerialConnection - more elaborate spoof.
