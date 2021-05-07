@@ -1,1 +1,0 @@
-{"control_port": "COM14", "data_port": "COM11", "baud": 921600}
