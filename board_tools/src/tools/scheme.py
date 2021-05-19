@@ -10,6 +10,11 @@ class Scheme(ABC):
     def write_one_message(self, message, connection):
         pass
 
+    def parse_message(self, data):
+        m = Message()
+        self.set_fields_general(m, data)
+        return m
+
     def set_fields_general(self, message, data):
         pass
 

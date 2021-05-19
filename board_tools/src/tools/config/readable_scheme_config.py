@@ -27,18 +27,18 @@ FORMAT_CAL = [
 
 #APIMU,7757199.318,-0.0004,0.0131,0.5096,1.8946,-0.2313,-0.4396,0*7E
 FORMAT_IMU = [
-    ("time", float),
-    ("accel_x", float),
-    ("accel_y", float),
-    ("accel_z", float),
-    ("rate_x", float),
-    ("rate_y", float),
-    ("rate_z", float),
+    ("imu_time_ms", float),
+    ("accel_x_g", float),
+    ("accel_y_g", float),
+    ("accel_z_g", float),
+    ("angrate_x_dps", float),
+    ("angrate_y_dps", float),
+    ("angrate_z_dps", float),
     ("fog_volts", float),
-    ("fog_rate", float),
-    ("odometer_speed", float),
-    ("odometer_time", float),
-    ("temperature", float)
+    ("fog_angrate_dps", float),
+    ("odometer_speed_mps", float),
+    ("odometer_time_ms", float),
+    ("temperature_c", float)
 ]
 
 FORMAT_VER = [
@@ -107,21 +107,21 @@ FORMAT_PNG = [
 
 FORMAT_GPS = [
     ("imu_time_ms", float),
-    ("gps_time_ms", float),
-    ("lat", float),
-    ("lon", float),
+    ("gps_time_ns", int),
+    ("lat_deg", float),
+    ("lon_deg", float),
     ("alt_ellipsoid_m", float),
     ("alt_msl_m", float),
-    ("speed_m_per_s", float),
-    ("heading_degrees", float),
-    ("acc_horizontal_m", float),
-    ("acc_vertical_m", float),
+    ("speed_mps", float),
+    ("heading_deg", float),
+    ("accuracy_horizontal_m", float),
+    ("accuracy_vertical_m", float),
     ("PDOP", float),
-    ("fix-type", int),
-    ("numSV", int),
-    ("spdacc", float),
-    ("hdsacc", float),
-    ("carrSoln", int)
+    ("gnss_fix_type", int),
+    ("num_sats", int),
+    ("speed_accuracy_mps", float),
+    ("heading_accuracy_deg", float),
+    ("carrier_solution_status", int)
 ]
 
 FORMAT_ODO = [
@@ -130,18 +130,17 @@ FORMAT_ODO = [
 
 #most of these can be blank if not initialized
 FORMAT_INS = [
-    ("IMU_Time", int),
-    ("GPS_Time", int),
-    ("heading_initialized", int),
-    ("position_lat", float),
-    ("position_lon", float),
-    ("position_alt", float),
-    ("velocity_0", float),
-    ("velocity_1", float),
-    ("velocity_2", float),
-    ("attitude_0", float),
-    ("attitude_1", float),
-    ("attitude_2", float)
+    ("imu_time_ms", int),
+    ("gps_time_ns", int),
+    ("ins_solution_status", int), #was heading_initialized
+    ("lat_deg", float),
+    ("lon_deg", float),
+    ("alt_m", float),
+    ("velocity_0_mps", float), #relative to the orientation setting, will be north, east, down in default +X+Y+Z
+    ("velocity_1_mps", float),
+    ("velocity_2_mps", float),
+    ("attitude_0_deg", float),
+    ("attitude_1_deg", float),
+    ("attitude_2_deg", float),
+    ("zupt_flag", int)
 ]
-#APINS,42134,,0,,,,,,,-4.052249,-2.304255,-0.018574,*5E
-#,1,2,3,4,5,6,7,8,9,10,11,12,13*5E
