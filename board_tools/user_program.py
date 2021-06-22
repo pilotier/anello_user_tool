@@ -12,6 +12,7 @@ import socket
 import select
 from user_program_config import *
 from ioloop import *
+import PySimpleGUI as sg
 from convertLog import export_logs# TODO - put under src directory?
 
 parent_dir = str(pathlib.Path(__file__).parent)
@@ -27,7 +28,8 @@ class UserProgram:
                  con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                  log_on, log_start, log_stop, log_name,
                  ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
-                 ntrip_ip, ntrip_port, ntrip_gga, ntrip_req):
+                 ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
+                 last_ins_msg, last_gps_msg, last_imu_msg):
         self.connection_info = None
         self.board = None
         self.serialnum = ""
@@ -42,7 +44,7 @@ class UserProgram:
         self.log_on, self.log_start, self.log_stop, self.log_name = log_on, log_start, log_stop, log_name
         self.ntrip_on, self.ntrip_start, self.ntrip_stop, self.ntrip_succeed = ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed
         self.ntrip_ip, self.ntrip_port, self.ntrip_gga, self.ntrip_req = ntrip_ip, ntrip_port, ntrip_gga, ntrip_req
-
+        self.last_ins_msg, self.last_gps_msg, self.last_imu_msg = last_ins_msg, last_gps_msg, last_imu_msg
 
     def mainloop(self):
         while True:
@@ -57,6 +59,8 @@ class UserProgram:
                     self.configure()
                 elif action == "Log":
                     self.log()
+                elif action == "Monitor":
+                    self.monitor()
                 elif action == "NTRIP":
                     self.ntrip_menu()
                 elif action == "Upgrade":
@@ -363,7 +367,6 @@ class UserProgram:
             self.start_logging()
         elif selected_action == "Stop":
             self.stop_logging()
-            #show_and_pause("stopped logging")
         else:
             return
 
@@ -384,8 +387,6 @@ class UserProgram:
             else:
                 chosen_name = input("file name: ")
             self.log_name.value = chosen_name.encode()
-            #log_file = open(log_name, 'w')
-            #self.log_file = open_log_file("../logs", chosen_name) #do this in other thread
             self.log_on.value = 1
             self.log_start.value = 1
 
@@ -488,6 +489,149 @@ class UserProgram:
     def stop_ntrip(self):
         self.ntrip_on.value = 0
         self.ntrip_stop.value = 1
+
+    def monitor(self):
+        if not self.board:
+            show_and_pause("connect before monitoring")
+            return
+        ascii_scheme = ReadableScheme()
+        sg.theme(SGTHEME)
+
+        label_font = (FONT_NAME, LABEL_FONT_SIZE)
+        value_font = (FONT_NAME, VALUE_FONT_SIZE)
+
+        #GPS and Log toggles
+        gps_is_on = False
+        resp = self.retry_command(self.board.get_cfg, [["gps1"]])
+        if proper_response(resp, b'CFG') and hasattr(resp, "configurations"):
+            gps_is_on = resp.configurations["gps1"] == b'on'
+        gps_button = sg.Button(GPS_TEXT+TOGGLE_TEXT[gps_is_on], key="gps_button",enable_events=True,
+                               font = value_font, button_color=TOGGLE_COLORS[gps_is_on])
+        log_button = sg.Button(LOG_TEXT+TOGGLE_TEXT[self.log_on.value], key="log_button",  enable_events=True,
+                               font = value_font, button_color=TOGGLE_COLORS[self.log_on.value])
+
+        #put rtk status in top row
+        gps_carrsoln_label = sg.Text("gps carrier solution: ", size=MONITOR_LABEL_SIZE, font=label_font)
+        gps_carrsoln = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_carrsoln", size=MONITOR_LATLON_SIZE, font=value_font)
+        gps_fix_label = sg.Text("gps fix type: ", size=MONITOR_LABEL_SIZE, font=label_font)
+        gps_fix = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_fix", size=MONITOR_LATLON_SIZE, font=value_font)
+        # carrier solution vs fix type - need both? put both for now.
+
+        buttons_row = [gps_button, log_button, gps_carrsoln_label, gps_carrsoln, gps_fix_label, gps_fix]
+
+        #ins data: lat, lon, vx, vy, attitude x,y,z
+        lat = sg.Text(MONITOR_DEFAULT_VALUE, key="lat", size=MONITOR_LATLON_SIZE, font=value_font)
+        lon = sg.Text(MONITOR_DEFAULT_VALUE, key="lon", size=MONITOR_LATLON_SIZE, font=value_font)
+        vx = sg.Text(MONITOR_DEFAULT_VALUE, key="vx", size=MONITOR_VALUE_SIZE, font=value_font)
+        vy = sg.Text(MONITOR_DEFAULT_VALUE, key="vy", size=MONITOR_VALUE_SIZE, font=value_font)
+        att0 = sg.Text(MONITOR_DEFAULT_VALUE, key="att0", size=MONITOR_VALUE_SIZE, font=value_font)
+        att1 = sg.Text(MONITOR_DEFAULT_VALUE, key="att1", size=MONITOR_VALUE_SIZE, font=value_font)
+        att2 = sg.Text(MONITOR_DEFAULT_VALUE, key="att2", size=MONITOR_VALUE_SIZE, font=value_font)
+        soln = sg.Text(MONITOR_DEFAULT_VALUE, key="soln", size=MONITOR_VALUE_SIZE, font=value_font)
+        zupt = sg.Text(MONITOR_DEFAULT_VALUE, key="zupt", size=MONITOR_VALUE_SIZE, font=value_font)
+
+        lat_label = sg.Text("lat:", size=MONITOR_LABEL_SIZE, font=label_font)
+        lon_label = sg.Text("lon:", size=MONITOR_LABEL_SIZE, font=label_font)
+        vx_label = sg.Text("velocity x:", size=MONITOR_LABEL_SIZE, font=label_font)
+        vy_label = sg.Text("velocity y:", size=MONITOR_LABEL_SIZE, font=label_font)
+        att0_label = sg.Text("roll degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
+        att1_label = sg.Text("pitch degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
+        att2_label = sg.Text("yaw degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
+        soln_label = sg.Text("ins solution:", size=MONITOR_LABEL_SIZE, font=label_font)
+        zupt_label = sg.Text("stationary:", size=MONITOR_LABEL_SIZE, font=label_font)
+
+        latlon_row = [lat_label, lat, lon_label, lon]
+        velocity_row = [vx_label, vx, vy_label, vy]
+        att_row = [att0_label, att0, att1_label, att1, att2_label, att2]
+        flags_row = [soln_label, soln, zupt_label, zupt]
+        layout = [buttons_row, [sg.HSeparator()], latlon_row, velocity_row, att_row, flags_row]
+
+        #group elements by size for resizing
+        label_font_elements = [lat_label, lon_label, vx_label, vy_label, att0_label, att1_label, att2_label, soln_label, zupt_label]
+        value_font_elements = [lat, lon, vx, vy, att0, att1, att2, soln, zupt]
+        buttons = [gps_button, log_button]
+        # layout = [gps_row, log_row, ['---'], latlon_row, velocity_row, att_row, flags_row]
+
+        window = sg.Window(title="Output monitoring", layout=layout, finalize=True, resizable=True)
+        window.bind('<Configure>', "Configure")
+        base_width, base_height = window.size
+        debug_print("BASE_WIDTH: "+str(base_width))
+        debug_print("BASE_HEIGHT:" +str(base_height))
+
+        while True:
+            # check for new messages and update the displayed data
+
+            if last_ins_msg.value:  # currently gps message - handle it
+                ins_msg = ascii_scheme.parse_message(last_ins_msg.value)
+                # debug_print(msg)
+                # for label, attrname in configs:
+                # textval = str(getattr(msg, attrname) if hasattr(msg, attrname) else default_value
+                # window[label].update(textval)
+                window["lat"].update(str(ins_msg.lat_deg) if hasattr(ins_msg, "lat_deg") else MONITOR_DEFAULT_VALUE)
+                window["lon"].update(str(ins_msg.lon_deg) if hasattr(ins_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
+                window["vx"].update(
+                    str(ins_msg.velocity_0_mps) if hasattr(ins_msg, "velocity_0_mps") else MONITOR_DEFAULT_VALUE)
+                window["vy"].update(
+                    str(ins_msg.velocity_1_mps) if hasattr(ins_msg, "velocity_1_mps") else MONITOR_DEFAULT_VALUE)
+                window["att0"].update(
+                    str(ins_msg.attitude_0_deg) if hasattr(ins_msg, "attitude_0_deg") else MONITOR_DEFAULT_VALUE)
+                window["att1"].update(
+                    str(ins_msg.attitude_1_deg) if hasattr(ins_msg, "attitude_1_deg") else MONITOR_DEFAULT_VALUE)
+                window["att2"].update(
+                    str(ins_msg.attitude_2_deg) if hasattr(ins_msg, "attitude_2_deg") else MONITOR_DEFAULT_VALUE)
+                window["soln"].update(
+                    INS_SOLN_NAMES[ins_msg.ins_solution_status] if hasattr(ins_msg, "ins_solution_status") else MONITOR_DEFAULT_VALUE)
+                window["zupt"].update(ZUPT_NAMES[ins_msg.zupt_flag] if hasattr(ins_msg, "zupt_flag") else MONITOR_DEFAULT_VALUE)
+                # window.refresh()
+            if last_gps_msg.value:
+                gps_msg = ascii_scheme.parse_message(last_gps_msg.value)
+                window["gps_carrsoln"].update(GPS_SOLN_NAMES[gps_msg.carrier_solution_status] if hasattr(gps_msg, "carrier_solution_status") else MONITOR_DEFAULT_VALUE)
+                window["gps_fix"].update(GPS_FIX_NAMES[gps_msg.gnss_fix_type] if hasattr(gps_msg, "gnss_fix_type") else MONITOR_DEFAULT_VALUE)
+
+            # handle events from this side: gps toggle or close.
+            # if counter == 0:
+            event, values = window.read(timeout=MONITOR_REFRESH_MS, timeout_key="timeout")
+            if event != "timeout":
+                debug_print("event: " + str(event))
+                debug_print("values: " + str(values))
+            if event == sg.WIN_CLOSED:  # close - return to wait_for_monitor_start
+                window.close() #needs this to close properly on raspberry pi. not needed in windows.
+                break
+            elif event == "gps_button":
+                #switch to opposite state
+                if gps_is_on:
+                    configs = {'gps1': b'off', 'gps2': b'off'}
+                else:
+                    configs = {'gps1': b'on', 'gps2': b'on'}
+                write_resp = self.retry_command(self.board.set_cfg, [configs]) #toggle gps in RAM only
+                #read again to update button in case of failure
+                read_resp = self.retry_command(self.board.get_cfg, [["gps1"]])
+                gps_is_on = read_resp.configurations["gps1"] == b'on'
+                gps_button.update(GPS_TEXT+TOGGLE_TEXT[gps_is_on], button_color=TOGGLE_COLORS[gps_is_on])
+            elif event == "log_button":
+                #stop if on, start if off
+                if self.log_on.value:
+                    self.stop_logging()
+                else:
+                    #start log with default name
+                    logname = collector.default_log_name()
+                    self.log_name.value = logname.encode()
+                    self.log_on.value = 1
+                    self.log_start.value = 1
+                #update color
+                log_button.update(LOG_TEXT+TOGGLE_TEXT[self.log_on.value], button_color=TOGGLE_COLORS[self.log_on.value])
+            elif event == "Configure": #resize, move. also triggers on button for some reason.
+                debug_print("size:")
+                debug_print(repr(window.size))
+                width, height = window.size
+                scale = min(width / base_width , height / base_height)
+                for item in value_font_elements:
+                    item.update(font=(FONT_NAME, int(VALUE_FONT_SIZE * scale)))
+                for item in label_font_elements:
+                    item.update(font=(FONT_NAME, int(LABEL_FONT_SIZE * scale)))
+                for item in buttons:
+                    item.font = (FONT_NAME, int(LABEL_FONT_SIZE * scale))
+                #zupt.update(font = (FONT_NAME, int(VALUE_FONT_SIZE * scale)))
 
     # tell them to get bootloader exe and hex, give upgrade instructions. Will not do this automatically yet.
     # prompt to activate boot loader mode
@@ -627,12 +771,14 @@ def runUserProg(exitflag, con_on, con_start, con_stop, con_succeed,
                 con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                 log_on, log_start, log_stop, log_name,
                 ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
-                ntrip_ip, ntrip_port, ntrip_gga, ntrip_req):
+                ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
+                last_ins_msg, last_gps_msg, last_imu_msg):
     prog = UserProgram(exitflag, con_on, con_start, con_stop, con_succeed,
                        con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                        log_on, log_start, log_stop, log_name,
                        ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
-                       ntrip_ip, ntrip_port, ntrip_gga, ntrip_req)
+                       ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
+                       last_ins_msg, last_gps_msg, last_imu_msg)
     prog.mainloop()
 
 
@@ -669,11 +815,18 @@ if __name__ == "__main__":
     ntrip_gga = Value('b', 0)
     ntrip_req = Array('c', string_size)  # b'') #probably biggest string - allocate more?
 
+    #shared vars for monitor
+    last_ins_msg = Array('c', string_size)
+    last_gps_msg = Array('c', string_size)
+    last_imu_msg = Array('c', string_size)
+
     shared_args = (exitflag, con_on, con_start, con_stop, con_succeed,
                    con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                    log_on, log_start, log_stop, log_name,
-                   ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed, ntrip_ip, ntrip_port, ntrip_gga, ntrip_req)
-    io_thread = Process(target=io_loop, args = shared_args)
-    io_thread.start()
+                   ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed, ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
+                   last_ins_msg, last_gps_msg, last_imu_msg)
+    io_process = Process(target=io_loop, args=shared_args)
+    io_process.start()
     runUserProg(*shared_args) # must do this in main thread so it can take inputs
-    io_thread.join()
+    io_process.join()
+

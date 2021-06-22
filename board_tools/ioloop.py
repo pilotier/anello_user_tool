@@ -1,6 +1,7 @@
 import cutie
 import os
 import time
+import calendar
 import sys
 import pathlib
 import json
@@ -22,7 +23,7 @@ def open_log_file(location, name): #ioloop - goes in that file
     os.makedirs(location, exist_ok=True)
     full_path = os.path.join(location, name)
     try:
-        return open(full_path, 'w')
+        return open(full_path, 'wb')
     except Exception as e:
         print("error trying to open log file: "+location+"/"+name)
         return None
@@ -141,18 +142,30 @@ def build_gga(gps_message): #ioloop
     debug_print(gga_data)
     return gga_data
 
+#put into logs folder with sub-directory by date, eg: logs/Monday_5_24_2021
+def log_path():
+    #base = "../logs"
+    ltime = time.localtime()
+    #month directory name: "2021_06" for june 21, 2021
+    month_dir = "_".join([str(ltime.tm_year), str(ltime.tm_mon)])
+    #day directory name: "21" for june 21, 2021
+    day_dir = str(ltime.tm_mday)
+    return os.path.join("..", "logs", month_dir, day_dir)
+
 def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
             con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
             log_on, log_start, log_stop, log_name,
             ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
-            ntrip_ip, ntrip_port, ntrip_gga, ntrip_req):
+            ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
+            last_ins_msg, last_gps_msg, last_imu_msg):
+
     data_connection = None
     ntrip_reader = None
     ntrip_retrying = False
     ntrip_stop_time = 0
     log_file = None
     flush_counter=0
-    last_valid_gps = None
+    #last_valid_gps = None
     ascii_scheme = ReadableScheme()
 
     while True:
@@ -207,7 +220,7 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                     data_connection.close()
         elif log_start.value:
             debug_print("io_loop log start")
-            log_file = open_log_file("../logs", log_name.value.decode())
+            log_file = open_log_file(log_path(), log_name.value.decode())
             log_start.value = 0
         elif ntrip_start.value:
             debug_print("io_loop ntrip start")
@@ -266,38 +279,36 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                     # if COM: data can be several messages, and partial messages: have to extract GPS message, might be split
                     # if UDP: getting one whole message at a time - due to speed, or differences in read method?
                     # for now, only using UDP for ntrip. but if using COM, need to split on \n and handle partial gps.
-                    if b'GPS' in in_data:
-                        #debug_print("\n<"+in_data.decode()+">")
-                        # do split in case of COM, but won't use COM yet.
-                        parts = in_data.split(READABLE_START)
-                        for part in parts:
-                            # if len(part)>0 and part[0] == READABLE_START:
-                            #     part = part[1:]
-                            if b'GPS' in part: #should usually be true for only one part
-                                #debug_print("\n<"+part.decode()+">")
-                                gps_message = Message()
-                                ascii_scheme.set_fields_general(gps_message, part) #parse the gps message
-                                if gps_message.valid:
-                                    #debug_print("valid GPS message")
-                                    last_valid_gps = gps_message # save if needed for ntrip start or delayed sending
-                                    gps_received.value = 1 #will allow setting gga on in ntrip
-                                    #build and send GGA message if ntrip on
-                                    if ntrip_on.value and ntrip_reader and ntrip_gga:
-                                        # build GGA
-                                        gga_message = build_gga(gps_message)
-                                        try:
-                                            ntrip_reader.sendall(gga_message)
-                                        except Exception as e: #ntrip error, not data_connection
-                                            #TODO - handle this as if ntrip disconnected? then close (if open) and retry
-                                            debug_print("error sending gga message")
-                                else:
-                                    #debug_print("invalid GPS message")
-                                    pass
+                    #if b'GPS' in in_data:
+                    #debug_print("\n<"+in_data.decode()+">")
+                    # do split in case of COM, but won't use COM yet.
+                    parts = in_data.split(READABLE_START)
+                    for part in parts:
+                        last_msg = ascii_scheme.parse_message(part)
+                        if not last_msg.valid:
+                            continue
+                        #debug_print(last_msg)
+                        elif last_msg.msgtype == b'INS':
+                            last_ins_msg.value = part #send valid INS message to monitor
+                        elif last_msg.msgtype == b'GPS':
+                            #debug_print("valid GPS message")
+                            last_gps_msg.value = part # save if needed for ntrip start or delayed sending
+                            gps_received.value = 1 #will allow setting gga on in ntrip
+                            #build and send GGA message if ntrip on
+                            if ntrip_on.value and ntrip_reader and ntrip_gga:
+                                # build GGA
+                                gga_message = build_gga(last_msg)
+                                try:
+                                    ntrip_reader.sendall(gga_message)
+                                except Exception as e: #ntrip error, not data_connection
+                                    #TODO - handle this as if ntrip disconnected? then close (if open) and retry
+                                    debug_print("error sending gga message")
+                    #TODO - save INS messages too?
                     if log_on and log_file: #TODO - what about close in mid-write? could pass message and close here. or catch exception
                         #pass
                         #debug_print(in_data.decode())
                         #log_file.write("< " + str(flush_counter) + " >")
-                        log_file.write(in_data.decode())
+                        log_file.write(in_data)
                         #periodically flush so we see file size progress
                         flush_counter += 1
                         #debug_print("< "+str(flush_counter)+" >")

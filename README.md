@@ -14,6 +14,7 @@ This repo contains tools for logging and configuring with the Anello A-1.
         - numpy 1.19.3
         - matplotlib 3.3.3
         - pyserial 3.5
+        - PySimpleGUI 4.45.0
     - Troubleshooting numpy / matplotlib issue in Linux:
         - on Raspberry Pi running Linux, the versions of matplotlib and numpy installed with pip did not work
         - To fix this, do:

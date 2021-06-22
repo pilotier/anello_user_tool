@@ -336,6 +336,9 @@ class IMUBoard:
         m = Message({'msgtype': b'RST', 'code': code})
         return self.send_control_no_wait(m)  # after reset it may not respond
 
+    def send_reset_regular(self):
+        self.send_reset(0)
+
     def enter_bootloading(self):
         self.send_reset(2)
 
