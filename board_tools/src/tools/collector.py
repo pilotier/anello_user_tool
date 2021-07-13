@@ -77,7 +77,7 @@ class Collector:
             print(text)
 
     def debug_line(self, text):
-        self.debug(text + "\n")
+        self.debug("\n"+text)
 
     # log: info user would want, like message outputs
     # only go to file, don't print out. if debug set, should print, so call debug.
@@ -181,12 +181,12 @@ class Collector:
         # self.log_line("\nstatistics for time differences:")
         # self.log(str(self.one_var_statistics(time_diffs)))
 
-        for var in ["delta_t", "accel_x", "accel_y", "accel_z", "rate_x", "rate_y", "rate_z", "temperature"]:
+        for var in ["accel_x_g", "accel_y_g", "accel_z_g", "angrate_x_dps", "angrate_y_dps", "angrate_z_dps"]: #, "temperature_c"]:
             self.debug_line("statistics for " + var + ":")
             values = self.get_vector(var) #[getattr(m, var) for m in self.messages]
             self.debug(str(self.one_var_statistics(values)))
 
-        # #plot the time differences:
+        # #plot the time differences:fd
         # plt.plot(times[1:], time_diffs)
         # plt.xlabel("time")
         # plt.ylabel("time between messages")
@@ -204,8 +204,8 @@ class Collector:
     # add extra fields like delta t
     def add_delta_t(self, message):
         if self.last_message_time:
-            message.delta_t = message.time - self.last_message_time
-        self.last_message_time = message.time
+            message.delta_t = message.imu_time_ms - self.last_message_time
+        self.last_message_time = message.imu_time_ms
         # for first message, can't add delta_t - need to indicate that with something?
 
     # for gps messages only - they have imu_time_ms and gps_time_ms instead of time field
@@ -309,15 +309,18 @@ class Collector:
         plt.show()
 
     def plot_all_accelerations(self):
-        self.plot_multi_separately("time", ["accel_x", "accel_y", "accel_z"])
+        self.plot_multi_separately("imu_time_ms", ["accel_x_g", "accel_y_g", "accel_z_g"])
+
+    def plot_all_rates(self):
+        self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"])
 
     def plot_everything(self, ncols=2):
-        names = ["accel_x", "accel_y", "accel_z", "rate_x", "rate_y", "rate_z", "temperature", "delta_t"]
-        self.plot_multi_separately("time", names, columns=ncols)
+        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps"]#, "temperature_c"]
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols)
 
     def plot_all_gps(self, ncols=2):
         names = ["gps_time_ms", "lat", "lon", "alt_ellipsoid_m", "alt_msl_m", "speed_m_per_s", "heading_degrees",
-                 "acc_horizontal_m", "acc_vertical_m", "PDOP", "fix-type", "numSV", "spdacc", "hdsacc", "delta_t"]
+                 "acc_horizontal_m", "acc_vertical_m", "PDOP", "fix-type", "numSV", "spdacc", "hdsacc"]
 
         self.plot_multi_separately("imu_time_ms", names, gps=True, columns=ncols)
 
@@ -426,4 +429,3 @@ class RealTimePlot:
             self.data[i].append(value)
             lines[i].set_data(range(self.plotMaxLength), self.data[i])
             lineValueText[i].set_text('[' + lineLabel[i] + '] = ' + str(value))
-

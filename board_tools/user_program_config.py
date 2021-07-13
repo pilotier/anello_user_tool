@@ -40,10 +40,10 @@ CFG_FIELD_NAMES = [
     "ODOMETER",
     "ENABLE FOG",
     "DHCP (AUTO ASSIGN IP)",
-    "A-1 IP",
-    "REMOTE IP",
-    "REMOTE DATA PORT ",
-    "REMOTE CONFIGURATION PORT"
+    "UDP A-1 IP",
+    "UDP COMPUTER IP",
+    "UDP COMPUTER DATA PORT ",
+    "UDP COMPUTER CONFIGURATION PORT"
 ]
 
 # cfg codes in messaging. must match order of CFG_FIELD_NAMES
@@ -121,21 +121,23 @@ EXPORT_INS_COLOR_BASED_ON = "zupt_flag"
 EXPORT_INS_COLORS = {0: [0, 255, 0], 1: [255, 0, 0]}
 
 #__________monitor configs__________:
-MONITOR_REFRESH_MS = 100
+MONITOR_REFRESH_MS = 100 #100
 MONITOR_DEFAULT_VALUE = "--------------"
+ZERO_OUT_TIME = 5
 SGTHEME = "darkblue"
 # BASE_WIDTH = 1124
 # BASE_HEIGHT = 554
 MONITOR_LATLON_SIZE = (12,1)
-MONITOR_VALUE_SIZE = (8, 1)
+MONITOR_VALUE_SIZE = (10, 1)
 FONT_NAME = "arial"
-VALUE_FONT_SIZE = 50
+VALUE_FONT_SIZE = 40
 MONITOR_LABEL_SIZE = (15,1)
 LABEL_FONT_SIZE = 12
 GPS_TEXT = "GPS: "
 LOG_TEXT = "LOG: "
 TOGGLE_TEXT = {True:"on", False: "off"}
 TOGGLE_COLORS = {True: "green", False: "red"}
+BUTTON_DISABLE_COLOR = "gray"
 GPS_SOLN_NAMES = {0: "No solution", 1: "Float", 2: "Fix"}
 GPS_FIX_NAMES = {0: "no fix",
                  1: "dead reckoning only",

@@ -235,7 +235,7 @@ class UserProgram:
         auto_name = ""
         if settings: # only show saved option if it loads
             lip, rport1, rport2 = settings
-            auto_name = "Saved: device ip = "+lip+", data port = "+str(rport1)+", configuration port = "+str(rport2)
+            auto_name = "Saved: A-1 ip = "+lip+", computer data port = "+str(rport1)+", computer config port = "+str(rport2)
             options = [auto_name]+options
 
         selected = options[cutie.select(options)]
@@ -494,6 +494,11 @@ class UserProgram:
         if not self.board:
             show_and_pause("connect before monitoring")
             return
+
+        #main window freezes until monitor closes - explain that.
+        clear_screen()
+        print("\nMonitoring in other window. Close it to continue.")
+
         ascii_scheme = ReadableScheme()
         sg.theme(SGTHEME)
 
@@ -502,28 +507,40 @@ class UserProgram:
 
         #GPS and Log toggles
         gps_is_on = False
+        gps_working = False
         resp = self.retry_command(self.board.get_cfg, [["gps1"]])
         if proper_response(resp, b'CFG') and hasattr(resp, "configurations"):
             gps_is_on = resp.configurations["gps1"] == b'on'
-        gps_button = sg.Button(GPS_TEXT+TOGGLE_TEXT[gps_is_on], key="gps_button",enable_events=True,
-                               font = value_font, button_color=TOGGLE_COLORS[gps_is_on])
+            gps_working = True
+            gps_button = sg.Button(GPS_TEXT+TOGGLE_TEXT[gps_is_on], key="gps_button",enable_events=True,
+                                   font = value_font, button_color=TOGGLE_COLORS[gps_is_on])
+        else:
+            gps_button = sg.Button(GPS_TEXT + "disabled", key="gps_button", enable_events=False,
+                                   font=value_font, button_color=BUTTON_DISABLE_COLOR)
         log_button = sg.Button(LOG_TEXT+TOGGLE_TEXT[self.log_on.value], key="log_button",  enable_events=True,
                                font = value_font, button_color=TOGGLE_COLORS[self.log_on.value])
 
+        time_since_gps_label = sg.Text("time since gps(s): ", size=MONITOR_LABEL_SIZE, font=label_font)
+        time_since_gps = sg.Text(MONITOR_DEFAULT_VALUE, key="since_gps", size=MONITOR_LABEL_SIZE, font=label_font)
+        time_since_ins_label = sg.Text("time since ins(s): ", size=MONITOR_LABEL_SIZE, font=label_font)
+        time_since_ins = sg.Text(MONITOR_DEFAULT_VALUE, key="since_ins", size=MONITOR_LABEL_SIZE, font=label_font)
+        buttons_row = [gps_button, log_button, time_since_gps_label, time_since_gps, time_since_ins_label, time_since_ins]
+
         #put rtk status in top row
-        gps_carrsoln_label = sg.Text("gps carrier solution: ", size=MONITOR_LABEL_SIZE, font=label_font)
+        gps_carrsoln_label = sg.Text("carrier soln: ", size=MONITOR_LABEL_SIZE, font=label_font)
         gps_carrsoln = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_carrsoln", size=MONITOR_LATLON_SIZE, font=value_font)
         gps_fix_label = sg.Text("gps fix type: ", size=MONITOR_LABEL_SIZE, font=label_font)
         gps_fix = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_fix", size=MONITOR_LATLON_SIZE, font=value_font)
         # carrier solution vs fix type - need both? put both for now.
 
-        buttons_row = [gps_button, log_button, gps_carrsoln_label, gps_carrsoln, gps_fix_label, gps_fix]
+        gps_fix_row = [gps_carrsoln_label, gps_carrsoln, gps_fix_label, gps_fix]
 
         #ins data: lat, lon, vx, vy, attitude x,y,z
         lat = sg.Text(MONITOR_DEFAULT_VALUE, key="lat", size=MONITOR_LATLON_SIZE, font=value_font)
         lon = sg.Text(MONITOR_DEFAULT_VALUE, key="lon", size=MONITOR_LATLON_SIZE, font=value_font)
-        vx = sg.Text(MONITOR_DEFAULT_VALUE, key="vx", size=MONITOR_VALUE_SIZE, font=value_font)
-        vy = sg.Text(MONITOR_DEFAULT_VALUE, key="vy", size=MONITOR_VALUE_SIZE, font=value_font)
+        speed = sg.Text(MONITOR_DEFAULT_VALUE, key="speed", size=MONITOR_VALUE_SIZE, font=value_font)
+        # vx = sg.Text(MONITOR_DEFAULT_VALUE, key="vx", size=MONITOR_VALUE_SIZE, font=value_font)
+        # vy = sg.Text(MONITOR_DEFAULT_VALUE, key="vy", size=MONITOR_VALUE_SIZE, font=value_font)
         att0 = sg.Text(MONITOR_DEFAULT_VALUE, key="att0", size=MONITOR_VALUE_SIZE, font=value_font)
         att1 = sg.Text(MONITOR_DEFAULT_VALUE, key="att1", size=MONITOR_VALUE_SIZE, font=value_font)
         att2 = sg.Text(MONITOR_DEFAULT_VALUE, key="att2", size=MONITOR_VALUE_SIZE, font=value_font)
@@ -532,23 +549,25 @@ class UserProgram:
 
         lat_label = sg.Text("lat:", size=MONITOR_LABEL_SIZE, font=label_font)
         lon_label = sg.Text("lon:", size=MONITOR_LABEL_SIZE, font=label_font)
-        vx_label = sg.Text("velocity x:", size=MONITOR_LABEL_SIZE, font=label_font)
-        vy_label = sg.Text("velocity y:", size=MONITOR_LABEL_SIZE, font=label_font)
+        speed_label = sg.Text("speed meters/sec:", size=MONITOR_LABEL_SIZE, font=label_font)
+        #vx_label = sg.Text("velocity x:", size=MONITOR_LABEL_SIZE, font=label_font)
+        #vy_label = sg.Text("velocity y:", size=MONITOR_LABEL_SIZE, font=label_font)
         att0_label = sg.Text("roll degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
         att1_label = sg.Text("pitch degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
-        att2_label = sg.Text("yaw degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
+        att2_label = sg.Text("heading degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
         soln_label = sg.Text("ins solution:", size=MONITOR_LABEL_SIZE, font=label_font)
         zupt_label = sg.Text("stationary:", size=MONITOR_LABEL_SIZE, font=label_font)
 
         latlon_row = [lat_label, lat, lon_label, lon]
-        velocity_row = [vx_label, vx, vy_label, vy]
-        att_row = [att0_label, att0, att1_label, att1, att2_label, att2]
+        velocity_row = [speed_label, speed, att2_label, att2]
+        att_row = [att0_label, att0, att1_label, att1]
         flags_row = [soln_label, soln, zupt_label, zupt]
-        layout = [buttons_row, [sg.HSeparator()], latlon_row, velocity_row, att_row, flags_row]
+        layout = [buttons_row, [sg.HSeparator()], latlon_row, velocity_row, att_row, flags_row, gps_fix_row]
 
         #group elements by size for resizing
-        label_font_elements = [lat_label, lon_label, vx_label, vy_label, att0_label, att1_label, att2_label, soln_label, zupt_label]
-        value_font_elements = [lat, lon, vx, vy, att0, att1, att2, soln, zupt]
+        label_font_elements = [lat_label, lon_label, speed_label, att0_label, att1_label, att2_label,
+                               soln_label, zupt_label, gps_carrsoln_label, gps_fix_label]
+        value_font_elements = [lat, lon, speed, att0, att1, att2, soln, zupt, gps_carrsoln, gps_fix]
         buttons = [gps_button, log_button]
         # layout = [gps_row, log_row, ['---'], latlon_row, velocity_row, att_row, flags_row]
 
@@ -558,35 +577,75 @@ class UserProgram:
         debug_print("BASE_WIDTH: "+str(base_width))
         debug_print("BASE_HEIGHT:" +str(base_height))
 
+        last_last_ins = b''
+        last_last_gps = b''
+        last_ins_time = time.time()
+        last_gps_time = last_ins_time
+
+        ins_fields = [lat, lon, speed, att0, att1, att2, soln, zupt]
+        gps_fields = [gps_carrsoln, gps_fix]
+
         while True:
             # check for new messages and update the displayed data
 
-            if last_ins_msg.value:  # currently gps message - handle it
-                ins_msg = ascii_scheme.parse_message(last_ins_msg.value)
-                # debug_print(msg)
-                # for label, attrname in configs:
-                # textval = str(getattr(msg, attrname) if hasattr(msg, attrname) else default_value
-                # window[label].update(textval)
-                window["lat"].update(str(ins_msg.lat_deg) if hasattr(ins_msg, "lat_deg") else MONITOR_DEFAULT_VALUE)
-                window["lon"].update(str(ins_msg.lon_deg) if hasattr(ins_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
-                window["vx"].update(
-                    str(ins_msg.velocity_0_mps) if hasattr(ins_msg, "velocity_0_mps") else MONITOR_DEFAULT_VALUE)
-                window["vy"].update(
-                    str(ins_msg.velocity_1_mps) if hasattr(ins_msg, "velocity_1_mps") else MONITOR_DEFAULT_VALUE)
-                window["att0"].update(
-                    str(ins_msg.attitude_0_deg) if hasattr(ins_msg, "attitude_0_deg") else MONITOR_DEFAULT_VALUE)
-                window["att1"].update(
-                    str(ins_msg.attitude_1_deg) if hasattr(ins_msg, "attitude_1_deg") else MONITOR_DEFAULT_VALUE)
-                window["att2"].update(
-                    str(ins_msg.attitude_2_deg) if hasattr(ins_msg, "attitude_2_deg") else MONITOR_DEFAULT_VALUE)
-                window["soln"].update(
-                    INS_SOLN_NAMES[ins_msg.ins_solution_status] if hasattr(ins_msg, "ins_solution_status") else MONITOR_DEFAULT_VALUE)
-                window["zupt"].update(ZUPT_NAMES[ins_msg.zupt_flag] if hasattr(ins_msg, "zupt_flag") else MONITOR_DEFAULT_VALUE)
+            if last_ins_msg.value:
+                elapsed = time.time() - last_ins_time
+                window["since_ins"].update('%.2f' % elapsed)
+                if last_ins_msg.value == last_last_ins:
+                    #did not change - no update. but if it's been too long, zero the fields
+                    #time_since_ins.update(str(elapsed))
+                    #window.refresh()
+                    if elapsed > ZERO_OUT_TIME:
+                        for field in ins_fields:
+                            field.update(MONITOR_DEFAULT_VALUE)
+                else: #changed - update the last_ins and counter, then update display from the new values
+                    last_last_ins = last_ins_msg.value
+                    last_ins_time = time.time()
+
+                    ins_msg = ascii_scheme.parse_message(last_ins_msg.value)
+                    # debug_print(msg)
+                    # for label, attrname in configs:
+                    # textval = str(getattr(msg, attrname) if hasattr(msg, attrname) else default_value
+                    # window[label].update(textval)
+                    window["lat"].update(str(ins_msg.lat_deg) if hasattr(ins_msg, "lat_deg") else MONITOR_DEFAULT_VALUE)
+                    window["lon"].update(str(ins_msg.lon_deg) if hasattr(ins_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
+
+                    #compute ins speed as magnitude. include vz? should be small anyway
+                    vx = float(ins_msg.velocity_0_mps) if hasattr(ins_msg, "velocity_0_mps") else 0
+                    vy = float(ins_msg.velocity_1_mps) if hasattr(ins_msg, "velocity_1_mps") else 0
+                    vz = float(ins_msg.velocity_1_mps) if hasattr(ins_msg, "velocity_2_mps") else 0
+                    magnitude = ((vx**2)+(vy**2)+(vz**2))**(1/2)
+                    # print("vx: " + str(vx))
+                    # print("vy: " + str(vy))
+                    # print("vz: " + str(vz))
+                    # print("speed: "+str(magnitude))
+                    window["speed"].update('%.3f'%magnitude)
+                    window["att0"].update(
+                        '%.2f'%ins_msg.attitude_0_deg if hasattr(ins_msg, "attitude_0_deg") else MONITOR_DEFAULT_VALUE)
+                    window["att1"].update(
+                        '%.2f'%ins_msg.attitude_1_deg if hasattr(ins_msg, "attitude_1_deg") else MONITOR_DEFAULT_VALUE)
+                    window["att2"].update(
+                        '%.2f'%ins_msg.attitude_2_deg if hasattr(ins_msg, "attitude_2_deg") else MONITOR_DEFAULT_VALUE)
+                    window["soln"].update(
+                        INS_SOLN_NAMES[ins_msg.ins_solution_status] if hasattr(ins_msg, "ins_solution_status") else MONITOR_DEFAULT_VALUE)
+                    window["zupt"].update(ZUPT_NAMES[ins_msg.zupt_flag] if hasattr(ins_msg, "zupt_flag") else MONITOR_DEFAULT_VALUE)
                 # window.refresh()
             if last_gps_msg.value:
-                gps_msg = ascii_scheme.parse_message(last_gps_msg.value)
-                window["gps_carrsoln"].update(GPS_SOLN_NAMES[gps_msg.carrier_solution_status] if hasattr(gps_msg, "carrier_solution_status") else MONITOR_DEFAULT_VALUE)
-                window["gps_fix"].update(GPS_FIX_NAMES[gps_msg.gnss_fix_type] if hasattr(gps_msg, "gnss_fix_type") else MONITOR_DEFAULT_VALUE)
+                elapsed = time.time() - last_gps_time
+                window["since_gps"].update('%.2f' % elapsed)
+                if last_gps_msg.value == last_last_gps:
+                    #did not change - no update. but if it's been too long, zero the fields
+                    # time_since_gps.update(str(elapsed))
+                    # window.refresh()
+                    if elapsed > ZERO_OUT_TIME:
+                        for field in gps_fields:
+                            field.update(MONITOR_DEFAULT_VALUE)
+                else:
+                    last_last_gps = last_gps_msg.value
+                    last_gps_time = time.time()
+                    gps_msg = ascii_scheme.parse_message(last_gps_msg.value)
+                    window["gps_carrsoln"].update(GPS_SOLN_NAMES[gps_msg.carrier_solution_status] if hasattr(gps_msg, "carrier_solution_status") else MONITOR_DEFAULT_VALUE)
+                    window["gps_fix"].update(GPS_FIX_NAMES[gps_msg.gnss_fix_type] if hasattr(gps_msg, "gnss_fix_type") else MONITOR_DEFAULT_VALUE)
 
             # handle events from this side: gps toggle or close.
             # if counter == 0:
@@ -597,7 +656,7 @@ class UserProgram:
             if event == sg.WIN_CLOSED:  # close - return to wait_for_monitor_start
                 window.close() #needs this to close properly on raspberry pi. not needed in windows.
                 break
-            elif event == "gps_button":
+            elif event == "gps_button" and gps_working:
                 #switch to opposite state
                 if gps_is_on:
                     configs = {'gps1': b'off', 'gps2': b'off'}

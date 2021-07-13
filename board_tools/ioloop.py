@@ -266,7 +266,7 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                 ntrip_stop_time = time.time()
 
             except Exception as e: #catchall - assume its a single bad read/write. only stop if we know it disconnected.
-                debug_print(type(e)+": "+str(e))
+                debug_print(str(type(e))+": "+str(e))
 
         # A1 has output: log it
         #if log_on.value and data_connection and data_connection.read_ready():
