@@ -210,9 +210,9 @@ class UserProgram:
         data_port_name = board.data_port_name
         board.data_connection.close()
 
-        self.serialnum = self.retry_command(board.get_serial, []).ser.decode()
-        self.version = self.retry_command(board.get_version, []).ver.decode()
-        self.pid = self.retry_command(board.get_pid, []).pid.decode()
+        self.serialnum = self.retry_command(method=board.get_serial, response_types=[b'SER']).ser.decode()
+        self.version = self.retry_command(method=board.get_version, response_types=[b'VER']).ver.decode()
+        self.pid = self.retry_command(method=board.get_pid, response_types=[b'PID']).pid.decode()
 
         #let io_thread do the data connection - give it the signal, close this copy
         self.com_port.value, self.com_baud.value = data_port_name.encode(), board.baud
@@ -259,9 +259,9 @@ class UserProgram:
         #board.data_connection = data_connection
         self.board = board
         #data_connection = board.data_connection
-        self.serialnum = self.retry_command(board.get_serial, []).ser.decode()  # this works like a ping - error or timeout if bad connection
-        self.version = self.retry_command(board.get_version, []).ver.decode()
-        self.pid = self.retry_command(board.get_pid, []).pid.decode()
+        self.serialnum = self.retry_command(method=board.get_serial, response_types=[b'SER']).ser.decode()  # this works like a ping - error or timeout if bad connection
+        self.version = self.retry_command(method=board.get_version, response_types=[b'VER']).ver.decode()
+        self.pid = self.retry_command(method=board.get_pid, response_types=[b'PID']).pid.decode()
         if selected == "Manual":
             save_udp_settings(A1_ip, data_port, config_port)
 
@@ -319,7 +319,7 @@ class UserProgram:
             if not change_anyway:
                 return
 
-        resp = self.retry_command(self.board.set_cfg_flash, [args])
+        resp = self.retry_command(method=self.board.set_cfg_flash, args=[args], response_types=[b'CFG', b'ERR'])
         if not proper_response(resp, b'CFG'):
             show_and_pause("") # proper_response already shows error, just pause to see it.
 
@@ -337,13 +337,13 @@ class UserProgram:
 
     # read all configurations.
     def read_all_configs(self, board):
-        resp = self.retry_command(board.get_cfg, [[]])
-        if proper_response(resp, b'CFG'):
-            print("Configurations:")
-            for name in resp.configurations:
-                if name in CFG_FIELD_CODES:
-                    full_name = CFG_FIELD_NAMES[CFG_FIELD_CODES.index(name)]
-                    print("\t" + full_name + ":\t" + resp.configurations[name].decode())
+        resp = self.retry_command(method=board.get_cfg, args=[[]], response_types=[b'CFG'])
+        #if proper_response(resp, b'CFG'):
+        print("Configurations:")
+        for name in resp.configurations:
+            if name in CFG_FIELD_CODES:
+                full_name = CFG_FIELD_NAMES[CFG_FIELD_CODES.index(name)]
+                print("\t" + full_name + ":\t" + resp.configurations[name].decode())
 
     # logging mode:
     # prompt for file name with default suggestion
@@ -508,12 +508,12 @@ class UserProgram:
         #GPS and Log toggles
         gps_is_on = False
         gps_working = False
-        resp = self.retry_command(self.board.get_cfg, [["gps1"]])
-        if proper_response(resp, b'CFG') and hasattr(resp, "configurations"):
+        resp = self.retry_command(method=self.board.get_cfg, args=[["gps1"]], response_types=[b'CFG'])
+        if hasattr(resp, "configurations"):
             gps_is_on = resp.configurations["gps1"] == b'on'
             gps_working = True
-            gps_button = sg.Button(GPS_TEXT+TOGGLE_TEXT[gps_is_on], key="gps_button",enable_events=True,
-                                   font = value_font, button_color=TOGGLE_COLORS[gps_is_on])
+            gps_button = sg.Button(GPS_TEXT+TOGGLE_TEXT[gps_is_on], key="gps_button", enable_events=True,
+                                   font=value_font, button_color=TOGGLE_COLORS[gps_is_on])
         else:
             gps_button = sg.Button(GPS_TEXT + "disabled", key="gps_button", enable_events=False,
                                    font=value_font, button_color=BUTTON_DISABLE_COLOR)
@@ -662,9 +662,9 @@ class UserProgram:
                     configs = {'gps1': b'off', 'gps2': b'off'}
                 else:
                     configs = {'gps1': b'on', 'gps2': b'on'}
-                write_resp = self.retry_command(self.board.set_cfg, [configs]) #toggle gps in RAM only
+                write_resp = self.retry_command(method=self.board.set_cfg, args=[configs], response_types=[b'CFG']) #toggle gps in RAM only
                 #read again to update button in case of failure
-                read_resp = self.retry_command(self.board.get_cfg, [["gps1"]])
+                read_resp = self.retry_command(method=self.board.get_cfg, args=[["gps1"]], response_types=[b'CFG'])
                 gps_is_on = read_resp.configurations["gps1"] == b'on'
                 gps_button.update(GPS_TEXT+TOGGLE_TEXT[gps_is_on], button_color=TOGGLE_COLORS[gps_is_on])
             elif event == "log_button":
@@ -724,13 +724,20 @@ class UserProgram:
     # retry only on error codes from connection issues: no start, incomplete, checksum fail
     # don't retry on invalid field, invalid value which could happen from bad user input
     # method: the function to call. args: list of arguments
-    def retry_command(self, method, args, retries=3):
+    def retry_command(self, method, response_types, args=[], retries=6):
         connection_errors = [1, 3, 4]
+        #may need to clear input buffer here so some old message isn't read as a response.
+        self.board.control_connection.reset_input_buffer() #TODO - make this actually do something for UDP
         for i in range(retries):
             output_msg = method(*args)
+            # no response: retry
             if not output_msg:
                 continue
+            # connection errors: retry. content errors like invalid fields/values don't retry
             if output_msg.msgtype == b'ERR' and output_msg.msgtype in connection_errors:
+                continue
+            # invalid response message or unexpected response type: retry
+            if not proper_response(output_msg, response_types):
                 continue
             else:
                 return output_msg
@@ -768,13 +775,13 @@ def date_time(): #UserProgram
     # or time.strftime(format[,t])
 
 
-def proper_response(message, expected_type): #UserProgram
+def proper_response(message, expected_types): #UserProgram
     if not message:
         return False
     if not message.valid:  # actual problem with the message format or checksum fail, don't expect this
         print("\nMessage parsing error: "+message.error)
         return False
-    elif message.msgtype == expected_type:
+    elif message.msgtype in expected_types:
         return True
     elif message.msgtype == b'ERR':  # Error message, like if you sent a bad request
         print("\nError: " + ERROR_CODES[message.err])

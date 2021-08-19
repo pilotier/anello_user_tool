@@ -22,7 +22,8 @@ FORMAT_CAL = [
     ("rate_x", int),
     ("rate_y", int),
     ("rate_z", int),
-    ("temperature", int)
+    ("temperature", int),
+    ("rate_fog", int)
 ]
 
 #APIMU,7757199.318,-0.0004,0.0131,0.5096,1.8946,-0.2313,-0.4396,0*7E

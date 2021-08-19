@@ -52,10 +52,23 @@ class Collector:
         if log_debug and debug_file_name:  # for debug: log to file if given, else only print debug
             self.debug_file = self.open_log_file(DEBUG_PATH, debug_file_name)
 
+        self.detect_misses_with_counters = detect_misses_with_counters
         self.statistics = SessionStatistics(detect_misses_with_counters)
         self.transformation = transformation  # tuple of (field list, operation)
         self.last_message_time = None
         self.last_gps_message_time = None
+
+    # re-initialize in case board has to re-initialize
+    def reset(self):
+        self.stop_reading()
+        self.board.reset_connections()
+        self.__init__(self.board, self.log_messages, self.message_file_name, self.log_messages_detailed, self.log_debug,
+                      self.debug_file_name, self.detect_misses_with_counters, self.transformation)
+        self.start_reading()  # should this start, or start separately?
+        # wait for first new message - might not be necessary since it passed without this
+        num_msg = len(self.messages)
+        while len(self.messages) == num_msg:
+            pass  # should it fail if no new messages in some amount of time?
 
     def open_log_file(self, location, name):
         # location needs to double any slashes \\ - otherwise we risk \b or other special characters
@@ -120,8 +133,12 @@ class Collector:
             if message.msgtype == b'GPS':
                 self.add_delta_t_gps(message)
                 self.gps_messages.append(message)
-            elif message.msgtype in [b'CAL', b'IMU']:
-                self.add_delta_t(message)
+            elif message.msgtype == b'CAL':
+                self.add_delta_t_cal(message)
+                self.transform_message_data(message)
+                self.messages.append(message)
+            elif message.msgtype == b'IMU':
+                self.add_delta_t_imu(message)
                 self.transform_message_data(message)
                 self.messages.append(message)
             elif message.msgtype == b'INS':
@@ -202,11 +219,16 @@ class Collector:
         return statistics
 
     # add extra fields like delta t
-    def add_delta_t(self, message):
+    def add_delta_t_imu(self, message):
         if self.last_message_time:
             message.delta_t = message.imu_time_ms - self.last_message_time
         self.last_message_time = message.imu_time_ms
         # for first message, can't add delta_t - need to indicate that with something?
+
+    def add_delta_t_cal(self, message):
+        if self.last_message_time:
+            message.delta_t = message.time - self.last_message_time
+        self.last_message_time = message.time
 
     # for gps messages only - they have imu_time_ms and gps_time_ms instead of time field
     def add_delta_t_gps(self, message):

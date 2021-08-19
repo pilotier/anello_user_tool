@@ -164,7 +164,16 @@ class UDPConnection(Connection):
 		self.sock.sendto(data, self.addr)
 
 	def reset_input_buffer(self):
-		pass  # gets called on dummy
+		#no built in reset, so read the whole buffer
+		temp_timeout = self.sock.gettimeout()
+		self.sock.settimeout(0)
+		while True:
+			try:
+				self.sock.recv(1024)
+			except Exception as e:
+				#print(str(type(e))+": "+str(e))
+				break
+		self.sock.settimeout(temp_timeout)
 
 	def open(self):
 		pass
