@@ -141,7 +141,20 @@ class ReadableScheme(Scheme):
         self.set_fields_from_list(message, FORMAT_CAL, payload) 
 
     def set_payload_fields_IMU(self, message, payload):
-        self.set_fields_from_list(message, FORMAT_IMU, payload)
+        #check with format by number of commas. num commas = num fields - 1
+        num_commas = payload.count(READABLE_PAYLOAD_SEPARATOR)
+        if num_commas == len(FORMAT_IMU) -1:
+            self.set_fields_from_list(message, FORMAT_IMU, payload)
+        elif num_commas == len(FORMAT_IMU_WITH_FOG_VOLTS) - 1:
+            self.set_fields_from_list(message, FORMAT_IMU_WITH_FOG_VOLTS, payload)
+
+    def set_payload_fields_INS(self, message, payload):
+        # check with format by number of commas. num commas = num fields - 1
+        num_commas = payload.count(READABLE_PAYLOAD_SEPARATOR)
+        if num_commas == len(FORMAT_INS) - 1:
+            self.set_fields_from_list(message, FORMAT_INS, payload)
+        elif num_commas == len(FORMAT_INS_EXTRA_COMMA) - 1:
+            self.set_fields_from_list(message, FORMAT_INS_EXTRA_COMMA, payload)
 
     def set_payload_fields_GPS(self, message, payload):
         self.set_fields_from_list(message, FORMAT_GPS, payload)
@@ -185,9 +198,6 @@ class ReadableScheme(Scheme):
 
     def set_payload_fields_ODO(self, message, payload):
         self.set_fields_from_list(message, FORMAT_ODO, payload)
-
-    def set_payload_fields_INS(self, message, payload):
-        self.set_fields_from_list(message, FORMAT_INS, payload)
 
     #config message: mode is read or write
     #write has name, value pairs:   APCFG,w,odr,100,msg,IMU  is CFG with mode = write, odr = 10, msg = IMU

@@ -35,6 +35,21 @@ FORMAT_IMU = [
     ("angrate_x_dps", float),
     ("angrate_y_dps", float),
     ("angrate_z_dps", float),
+    ("fog_angrate_dps", float),
+    ("odometer_speed_mps", float),
+    ("odometer_time_ms", float),
+    ("temperature_c", float)
+]
+
+#older A1 firmware has fog volts, removed in v0.2.1
+FORMAT_IMU_WITH_FOG_VOLTS = [
+    ("imu_time_ms", float),
+    ("accel_x_g", float),
+    ("accel_y_g", float),
+    ("accel_z_g", float),
+    ("angrate_x_dps", float),
+    ("angrate_y_dps", float),
+    ("angrate_z_dps", float),
     ("fog_volts", float),
     ("fog_angrate_dps", float),
     ("odometer_speed_mps", float),
@@ -138,6 +153,24 @@ FORMAT_INS = [
     ("lon_deg", float),
     ("alt_m", float),
     ("velocity_0_mps", float), #relative to the orientation setting, will be north, east, down in default +X+Y+Z
+    ("velocity_1_mps", float),
+    ("velocity_2_mps", float),
+    ("attitude_0_deg", float),
+    ("attitude_1_deg", float),
+    ("attitude_2_deg", float),
+    ("zupt_flag", int)
+]
+
+#for old A1 firmware, INS message has extra comma when position not initialized
+FORMAT_INS_EXTRA_COMMA = [
+    ("imu_time_ms", int),
+    ("gps_time_ns", int),
+    ("extra comma", int), #for the extra comma
+    ("ins_solution_status", int),
+    ("lat_deg", float),
+    ("lon_deg", float),
+    ("alt_m", float),
+    ("velocity_0_mps", float),
     ("velocity_1_mps", float),
     ("velocity_2_mps", float),
     ("attitude_0_deg", float),

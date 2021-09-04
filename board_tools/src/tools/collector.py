@@ -220,21 +220,30 @@ class Collector:
 
     # add extra fields like delta t
     def add_delta_t_imu(self, message):
-        if self.last_message_time:
-            message.delta_t = message.imu_time_ms - self.last_message_time
-        self.last_message_time = message.imu_time_ms
-        # for first message, can't add delta_t - need to indicate that with something?
+        try:
+            if self.last_message_time:
+                message.delta_t = message.imu_time_ms - self.last_message_time
+            self.last_message_time = message.imu_time_ms
+            # for first message, can't add delta_t - need to indicate that with something?
+        except Exception as e:
+            print("could not compute time for message: "+str(message))
 
     def add_delta_t_cal(self, message):
-        if self.last_message_time:
-            message.delta_t = message.time - self.last_message_time
-        self.last_message_time = message.time
+        try:
+            if self.last_message_time:
+                message.delta_t = message.time - self.last_message_time
+            self.last_message_time = message.time
+        except Exception as e:
+            print("could not compute time for message: "+str(message))
 
     # for gps messages only - they have imu_time_ms and gps_time_ms instead of time field
     def add_delta_t_gps(self, message):
-        if self.last_gps_message_time:
-            message.delta_t = message.imu_time_ms - self.last_gps_message_time
-        self.last_gps_message_time = message.imu_time_ms
+        try:
+            if self.last_gps_message_time:
+                message.delta_t = message.imu_time_ms - self.last_gps_message_time
+            self.last_gps_message_time = message.imu_time_ms
+        except Exception as e:
+            print("could not compute time for message: "+str(message))
 
     # do a transformation on one message
     # message - the message to be transformed
@@ -331,13 +340,13 @@ class Collector:
         plt.show()
 
     def plot_all_accelerations(self):
-        self.plot_multi_separately("imu_time_ms", ["accel_x_g", "accel_y_g", "accel_z_g"])
+        self.plot_multi_separately("imu_time_ms", ["accel_x_g", "accel_y_g", "accel_z_g"], columns=1)
 
     def plot_all_rates(self):
-        self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"])
+        self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"], columns=1)
 
     def plot_everything(self, ncols=2):
-        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps"]#, "temperature_c"]
+        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps"]#, "temperature_c"]
         self.plot_multi_separately("imu_time_ms", names, columns=ncols)
 
     def plot_all_gps(self, ncols=2):
@@ -397,26 +406,28 @@ class SessionStatistics:
 # plots the data recorded by a Collector in real time.
 class RealTimePlot:
 
-    def __init__(self, collector, plotVars, maxlength=100, ymin=-5000, ymax=5000, gps=False):
+    def __init__(self, collector, plotVars, maxlength=100, title="Real Time Plot", ymin=-5000, ymax=5000, gps=False, interval_ms=50):
         self.collector = collector
         self.plotMaxLength = maxlength
         
-        self.pltInterval = 50    # Period at which the plot animation updates [ms]
+        self.pltInterval = interval_ms    # Period at which the plot animation updates [ms]
         self.plotTimer = 0  # time range for the plot
         self.previousTimer = 0
         self.plotVars = plotVars
         self.gps = gps
         
         xmin = 0
+        #xmax should be time in seconds for data to cross the window: (max points) * (time per point)
         xmax = self.plotMaxLength
+        #xmax = self.plotMaxLength * (interval_ms / 1000) #self.plotMaxLength
         self.ymin = ymin
         self.ymax = ymax
         self.fig = plt.figure()
         ax = plt.axes(xlim=(xmin, xmax), ylim=(float(ymin - (ymax - ymin) / 10), float(ymax + (ymax - ymin) / 10)))
-        ax.set_title('Real Time Plot')
-        ax.set_xlabel("Time(seconds)")
+        ax.set_title(title)
+        ax.set_xlabel("data samples (1 per "+str(self.pltInterval) + " ms)")
         lineLabel = plotVars
-        big_styles = ['r-', 'g-', 'b-','ro', 'bo', 'go', 'r+', 'b+', 'g+']
+        big_styles = ['r-', 'g-', 'b-', 'ro', 'bo', 'go', 'r+', 'b+', 'g+']
         style = big_styles[0:len(self.plotVars)]
         timeText = ax.text(0.50, 0.95, '', transform=ax.transAxes)
         lines = []

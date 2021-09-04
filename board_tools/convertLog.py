@@ -12,17 +12,17 @@ from user_program_config import *
 #default values: currently 0 for everything. could set a different value per field and message type
 gps_header = ",".join(EXPORT_GPS_FIELDS)
 def gps_defaults(name):
-    return 0
+    return ""
     #return "missing"
 
 ins_header = ",".join(EXPORT_INS_FIELDS)
 def ins_defaults(name):
-    return 0
+    return ""
     #return "missing"
 
 imu_header = ",".join(EXPORT_IMU_FIELDS)
 def imu_defaults(name):
-    return 0
+    return ""
     #return "missing"
 
 all_show_fields = {b'GPS': EXPORT_GPS_FIELDS, b'INS': EXPORT_INS_FIELDS, b'IMU': EXPORT_IMU_FIELDS}
@@ -118,9 +118,6 @@ def export_logs():
             print(".", end="")
 
         m = rs.parse_message(line)
-        #print(m)
-        # if m and m.msgtype == b'INS' and m.data:
-        #     print("type " + m.msgtype.decode() + " commas: " + str(m.data.count(b',')))
         if m and m.valid and m.msgtype in EXPORT_MESSAGE_TYPES:
             # put whichever data we want based on message type and write to the csv for that type.
             # get each att rby name so it doesn't get show message.valid, checksum_input, etc
@@ -147,11 +144,10 @@ def export_logs():
 
         else:
             pass
-            #print("invalid message: "+str(message))
+            #print("invalid message: "+str(m))
 
         line = reader.readline()
         line = line.strip(b'#')
-        #print("line: " + line.decode())
 
     reader.close()
     ins_out.close()

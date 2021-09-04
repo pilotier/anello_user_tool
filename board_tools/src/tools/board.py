@@ -20,10 +20,11 @@ except ModuleNotFoundError:  # importing from outside the package
 # abstraction of the board and its inputs and outputs
 class IMUBoard:
 
-    def __init__(self, data_port=None, control_port=None, baud=DEFAULT_BAUD, scheme=ReadableScheme()):
+    def __init__(self, data_port=None, control_port=None, baud=DEFAULT_BAUD, scheme=ReadableScheme(), try_manual=True, timeout=None):
         self.scheme = scheme
+        self.timeout = timeout
         success = self.connect_to_ports(data_port, control_port, baud)
-        if not success:
+        if try_manual and not success:
             print("failed to connect with control port = "+str(control_port)+", data port = "+str(data_port)+", baud = "+str(baud))
             self.connect_manually()
 
@@ -103,15 +104,16 @@ class IMUBoard:
     # connect to the port numbers. return true if succesful connection, false if serial error or ping fails.
     def connect_to_ports(self, data_port=None, control_port=None, baud=DEFAULT_BAUD):
         success = True
+        timeout = self.timeout if self.timeout else TIMEOUT_REGULAR
         try:
             if data_port is None:
                 self.data_connection = DummyConnection()
             else:
-                self.data_connection = SerialConnection(data_port, baud, TIMEOUT_REGULAR)
+                self.data_connection = SerialConnection(data_port, baud, timeout)
             if control_port is None:
                 self.control_connection = DummyConnection()
             else:
-                self.control_connection = SerialConnection(control_port, baud, TIMEOUT_REGULAR)
+                self.control_connection = SerialConnection(control_port, baud, timeout)
             success = (control_port is None) or self.check_control_port()
             # TODO - verify data connection? but can't tell anything if odr=0
         except Exception as e:  # serial error

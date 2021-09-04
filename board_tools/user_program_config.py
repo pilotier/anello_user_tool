@@ -99,7 +99,7 @@ FLUSH_FREQUENCY = 200
 #__________Log export configs__________:
 EXPORT_MESSAGE_TYPES = [b'IMU', b'INS', b'GPS']
 EXPORT_IMU_FIELDS = ["imu_time_ms","accel_x_g","accel_y_g","accel_z_g",
-                     "angrate_x_dps","angrate_y_dps","angrate_z_dps","fog_volts","fog_angrate_dps",
+                     "angrate_x_dps","angrate_y_dps","angrate_z_dps","fog_angrate_dps",
                      "odometer_speed_mps","odometer_time_ms","temperature_c"]
 
 EXPORT_GPS_FIELDS = ["imu_time_ms","gps_time_ns","lat_deg","lon_deg","alt_ellipsoid_m","alt_msl_m",
