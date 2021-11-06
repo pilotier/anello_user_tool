@@ -46,6 +46,9 @@ class UserProgram:
         self.ntrip_ip, self.ntrip_port, self.ntrip_gga, self.ntrip_req = ntrip_ip, ntrip_port, ntrip_gga, ntrip_req
         self.last_ins_msg, self.last_gps_msg, self.last_imu_msg = last_ins_msg, last_gps_msg, last_imu_msg
 
+        #any features which might or not be there - do based on firmware version?
+        self.has_odo_port = False
+
     def mainloop(self):
         while True:
             try:
@@ -134,7 +137,6 @@ class UserProgram:
         else:
             status = "NTRIP: Not connected"
         print(status)
-
 
     def show_logging(self):
         if self.log_on.value:
@@ -295,12 +297,20 @@ class UserProgram:
         # hide udp settings if connected by udp. otherwise you can break the connection. or should we allow it?
         #skip_indices = UDP_FIELD_INDICES if self.connection_info["type"] == "UDP" else []
 
-        options = CFG_FIELD_NAMES + ["cancel"]
+        #check if it has odometer port or not, then show/hide in options
+        field_names = CFG_FIELD_NAMES[:]
+        field_codes = CFG_FIELD_CODES[:]
+        if not self.has_odo_port:
+            ind = field_codes.index('rport3')
+            field_names.pop(ind)
+            field_codes.pop(ind)
+
+        options = field_names + ["cancel"]
         selected_index = cutie.select(options)
         if options[selected_index] == "cancel":
             return
         args = {}
-        name, code = CFG_FIELD_NAMES[selected_index], CFG_FIELD_CODES[selected_index]
+        name, code = field_names[selected_index], field_codes[selected_index]
 
         if code == "orn": # special case: choose between two common options or choose to enter it
             value = self.select_orientation()
@@ -324,7 +334,14 @@ class UserProgram:
             show_and_pause("") # proper_response already shows error, just pause to see it.
 
     def select_orientation(self):
-        print("\nselect orientation:")
+        #use the orientation selector depending on version
+        if version_greater_or_equal(self.version, '0.3.4'):
+            return self.select_orn_8_opts()
+        return self.select_orn_24_opts()
+
+    #firmware before 0.3.4: 24 options - just show the 2 typical ones and allow entering others
+    def select_orn_24_opts(self):
+        print("\nselect ORIENTATION:")
         options = CFG_VALUE_OPTIONS["orn"]
         chosen = options[cutie.select(options)]
         if "+X+Y+Z" in chosen:
@@ -335,10 +352,25 @@ class UserProgram:
             print("\nenter value for orientation "+ CFG_FIELD_EXAMPLES["orn"])
             return input().encode()
 
+    #firmware 0.3.4 or later: 8 orientations: must end in +-Z -> show all 8
+    def select_orn_8_opts(self):
+        print("\nselect ORIENTATION:")
+        options = ORN_8_OPTIONS
+        chosen = options[cutie.select(options)]
+        #allow notes like (north east up) in the name
+        if "+X+Y+Z" in chosen:
+            return b'+X+Y+Z'
+        elif "+Y+X-Z" in chosen:
+            return b'+Y+X-Z'
+        else:
+            #if no note, the value is correct
+            return chosen.encode()
+
     # read all configurations.
     def read_all_configs(self, board):
         resp = self.retry_command(method=board.get_cfg, args=[[]], response_types=[b'CFG'])
         #if proper_response(resp, b'CFG'):
+        self.has_odo_port = ('rport3' in resp.configurations)
         print("Configurations:")
         for name in resp.configurations:
             if name in CFG_FIELD_CODES:
@@ -378,7 +410,7 @@ class UserProgram:
             show_and_pause("must connect before logging")
             return
         else:
-            suggested = collector.default_log_name()
+            suggested = collector.default_log_name(self.serialnum)
             options = ["default: " + suggested, "other"]
             print("\nFile name:")
             selected_option = cutie.select(options)
@@ -395,24 +427,28 @@ class UserProgram:
         self.log_stop.value = 1 #send stop signal to other thread which will close the log
 
     def ntrip_menu(self):
-        if self.connection_info and self.connection_info["type"] == "UDP":
-            clear_screen()
-            self.show_ntrip()
-            options = ["cancel"]
-            if self.ntrip_on.value:
-                options = ["Stop"] + options
+        if self.connection_info: # and self.connection_info["type"] == "UDP":
+            #before A1 fw ver 0.4.3, ntrip is over udp only
+            if self.connection_info["type"] == "UDP" or version_greater_or_equal(self.version, "0.4.3"):
+                clear_screen()
+                self.show_ntrip()
+                options = ["cancel"]
+                if self.ntrip_on.value:
+                    options = ["Stop"] + options
+                else:
+                    options = ["Start"] + options
+                selected = options[cutie.select(options)]
+                if selected == "Start":
+                    self.start_ntrip()
+                elif selected == "Stop":
+                    self.stop_ntrip()
+                else: #cancel
+                    return
             else:
-                options = ["Start"] + options
-            selected = options[cutie.select(options)]
-            if selected == "Start":
-                self.start_ntrip()
-            elif selected == "Stop":
-                self.stop_ntrip()
-                #close_ntrip(self.ntrip_on, self.ntrip_reader)
-            else: #cancel
+                show_and_pause("must connect by UDP to use NTRIP")
                 return
         else:
-            show_and_pause("must connect (UDP only) before starting NTRIP")
+            show_and_pause("must connect before starting NTRIP")
             return
 
     #NTRIP has Server and Port
@@ -472,7 +508,6 @@ class UserProgram:
                 # TODO make request structure for NTRIP v2, other auth options.
                 print("not implemented: version = " + str(ntrip_version) + ", auth = " + str(ntrip_auth))
                 self.ntrip_req.value=b'' # will work as False for conditions
-            #success = connect_ntrip(CONNECT_RETRIES, self.ntrip_on, self.ntrip_reader, self.ntrip_req, self.ntrip_ip, self.ntrip_port)
             #signal io_thread to connect the ntrip.
             clear_screen()
             self.ntrip_on.value = 1
@@ -673,7 +708,7 @@ class UserProgram:
                     self.stop_logging()
                 else:
                     #start log with default name
-                    logname = collector.default_log_name()
+                    logname = collector.default_log_name(self.serialnum)
                     self.log_name.value = logname.encode()
                     self.log_on.value = 1
                     self.log_start.value = 1
@@ -746,6 +781,22 @@ class UserProgram:
         self.release()
         show_and_pause("connection error - check cables and reconnect")
 
+
+def version_greater_or_equal(our_ver, compareto):
+    try:
+        our_nums = [int(c) for c in our_ver.split(".")]
+        other_nums = [int(c) for c in compareto.split(".")]
+    except Exception:
+        return False #default False which will usually mean feature does not exist
+    #compare from most important -> least important digit
+    for i in range(3):
+        if our_nums[i] > other_nums[i]:
+            return True
+        elif our_nums[i] < other_nums[i]:
+            return False
+    return True #equal
+
+
 # pause on messages if it will refresh after
 def show_and_pause(text): #UserProgram
     print(text)
@@ -790,6 +841,7 @@ def proper_response(message, expected_types): #UserProgram
         print('\nUnexpected response type: '+message.msgtype.decode())
         return False
 
+
 # save and load udp settings, like IMUBoard connection cache
 # TODO - should udp and com cache both go in IMUBoard? or both in user_program?
 def load_udp_settings(): #UserProgram
@@ -812,6 +864,7 @@ def save_udp_settings(lip, rport1, rport2): #UserProgram
         print("error writing connection settings: "+str(e))
         return None
 
+
 #not using yet: ntrip_version = 1/2 , ntrip_auth = "Basic"/"Digest"/"None"
 def load_ntrip_settings(): #UserProgram
     try:
@@ -821,6 +874,7 @@ def load_ntrip_settings(): #UserProgram
             return settings
     except Exception as e:
         return None
+
 
 def save_ntrip_settings(settings): #UserProgram
     try:

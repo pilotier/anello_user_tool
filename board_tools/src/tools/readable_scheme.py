@@ -30,6 +30,7 @@ class ReadableScheme(Scheme):
             data = connection.read_until(READABLE_END)
         if not data:
             return None
+        #print("receiving: "+data.decode())
         if data[:len(READABLE_START)] == READABLE_START: #chop off start code if present
             data = data[len(READABLE_START):]
         if data[-len(READABLE_END):] == READABLE_END: #chop off end code if present
@@ -44,8 +45,8 @@ class ReadableScheme(Scheme):
     #write a single message to the connection
     def write_one_message(self, message, connection):
         data = READABLE_START + self.build_message_general(message) + READABLE_END
+        #print("sending: "+data.decode()) #debug message creation
         connection.write(data)
-        #TODO check response, handle errors
 
     def set_fields_general(self, message, data):
         try:
@@ -109,8 +110,8 @@ class ReadableScheme(Scheme):
             b'RST': self.set_payload_fields_RST,
             b'PNG': self.set_payload_fields_PNG,
             b'ECH': self.set_payload_fields_ECH,
-            b'ODO': self.set_payload_fields_ODO,  #TODO- can remove this when odo data is added to data stream
-            b'INS': self.set_payload_fields_INS
+            b'ODO': self.set_payload_fields_ODO,
+            b'INS': self.set_payload_fields_INS,
         }
         decoderFunc = decoders.get(msgtype)
         if decoderFunc:
@@ -216,7 +217,6 @@ class ReadableScheme(Scheme):
             raise Exception("unknown mode for CFG message")
         return data
 
-
     #many messages have no fields, mostly if they are requests(requested resource is the message type)
     def build_payload_no_fields(self, message):
         return None
@@ -232,7 +232,11 @@ class ReadableScheme(Scheme):
 
     # get fields based on config with the correct type like int, float, bytes
     def set_fields_from_list(self, message, format_list, data):
-        separated = data.split(READABLE_PAYLOAD_SEPARATOR)
+        #allow passing data as bytes -> split, or list already split
+        if type(data) is list:
+            separated = data
+        else:
+            separated = data.split(READABLE_PAYLOAD_SEPARATOR)
         for i, part in enumerate(separated):
             if part:    #missing field will be None, can't convert to float
                 var_name, var_type = format_list[i]

@@ -1,6 +1,7 @@
 from threading import Thread
 import collections
 import matplotlib.pyplot as plt
+plt.rcParams['axes.grid'] = True
 import matplotlib.animation as animation
 import numpy as np
 import copy
@@ -21,9 +22,17 @@ except ModuleNotFoundError:  # importing from outside the package
     from tools.config.board_config import *
 
 
-def default_log_name():
-    time_str = time.ctime(time.time()).replace(" ", "_").replace(":", "_")
-    return "output_"+time_str+LOG_FILETYPE
+def default_log_name(serialNum = None):
+    #time_str = time.ctime(time.time()).replace(" ", "_").replace(":", "_")
+    local = time.localtime()
+    date_nums = [local.tm_year, local.tm_mon, local.tm_mday]
+    time_nums = [local.tm_hour, local.tm_min, local.tm_sec]
+    date_str = "date_" + "_".join([str(num) for num in date_nums])
+    time_str = "time_" + "_".join([str(num) for num in time_nums])
+    if serialNum is None:
+        return "output_" + date_str + "_" + time_str + LOG_FILETYPE
+    else:
+        return "output_" + date_str + "_" + time_str + "_SN_"+str(serialNum) + LOG_FILETYPE
 
 # Gets messages from a Board, stores and plots them
 class Collector:
@@ -272,7 +281,17 @@ class Collector:
     # get vector of some variable for all messages
     # TODO - cache vectors when calling this, or update vectors on receiving message?
     def get_vector(self, var_name):
-        return np.array([getattr(m, var_name) for m in self.messages if hasattr(m, var_name)])
+        #return np.array([getattr(m, var_name) for m in self.messages if hasattr(m, var_name)])
+
+        #longer version to show when anything is missing
+        #print("get vector: "+str(var_name))
+        values = []
+        for m in self.messages:
+            if hasattr(m, var_name):
+                values.append(getattr(m, var_name))
+            else:
+                print("missing attribute "+str(var_name)+ " in message: "+str(m))
+        return np.array(values)
 
     def get_vector_gps(self, var_name):
         return np.array([getattr(m, var_name) for m in self.gps_messages if hasattr(m, var_name)])
@@ -333,10 +352,12 @@ class Collector:
             #special handling for delta_t which has no value at first message
             if var == "delta_t":
                 dependent_data = np.concatenate((np.array([None]), dependent_data))
-            a.flat[i].plot(independent_data, dependent_data)
+            a.flat[i].plot(independent_data, dependent_data, '.')
             a.flat[i].set_title(var, loc='center')
             #a.flat[i].set_ylabel(var, rotation=0, fontsize=7, labelpad=20)
+            #plt.grid()
         plt.xlabel(independentVar)
+        #plt.grid()
         plt.show()
 
     def plot_all_accelerations(self):
@@ -346,8 +367,12 @@ class Collector:
         self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"], columns=1)
 
     def plot_everything(self, ncols=2):
-        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps"]#, "temperature_c"]
+        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps", "temperature_c"]
         self.plot_multi_separately("imu_time_ms", names, columns=ncols)
+
+    def plot_all_vs_temp(self, ncols=2):
+        names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps"]
+        self.plot_multi_separately("temperature_c", names, columns=ncols)
 
     def plot_all_gps(self, ncols=2):
         names = ["gps_time_ms", "lat", "lon", "alt_ellipsoid_m", "alt_msl_m", "speed_m_per_s", "heading_degrees",

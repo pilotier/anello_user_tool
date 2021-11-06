@@ -43,7 +43,8 @@ CFG_FIELD_NAMES = [
     "UDP A-1 IP",
     "UDP COMPUTER IP",
     "UDP COMPUTER DATA PORT ",
-    "UDP COMPUTER CONFIGURATION PORT"
+    "UDP COMPUTER CONFIGURATION PORT",
+    "UDP COMPUTER ODOMETER PORT"
 ]
 
 # cfg codes in messaging. must match order of CFG_FIELD_NAMES
@@ -59,7 +60,8 @@ CFG_FIELD_CODES = [
     "lip",
     "rip",
     "rport1",
-    "rport2"
+    "rport2",
+    "rport3"
 ]
 
 #UDP_FIELD_INDICES = [5, 6, 7, 8, 9]  # udp related field positions in CFG_FIELD_NAMES / CODES
@@ -71,7 +73,8 @@ CFG_FIELD_EXAMPLES = {
     "lip": "(aaa.bbb.ccc.ddd)",
     "rip": "(aaa.bbb.ccc.ddd)",
     "rport1": "(int from 1 to 65535)",
-    "rport2": "(int from 1 to 65535)"
+    "rport2": "(int from 1 to 65535)",
+    "rport3": "(int from 1 to 65535)"
 }
 
 # fixed list of values to select
@@ -84,6 +87,18 @@ CFG_VALUE_OPTIONS = {
     "fog": ["on", "off"],
     "dhcp": ["on", "off"]
 }
+
+#can have notes for just 2 cases now - if more notes needed, do another list or dictionary
+ORN_8_OPTIONS = [
+    "+X+Y+Z (North-East-Down)",
+    "+Y+X-Z (East-North-Up)",
+    "-X-Y+Z",
+    "+Y-X+Z",
+    "-Y+X+Z",
+    "+X-Y-Z",
+    "-X+Y-Z",
+    "-Y-X-Z"
+]
 
 #UDP constants
 #A1_port1 = UDP_LOCAL_DATA_PORT

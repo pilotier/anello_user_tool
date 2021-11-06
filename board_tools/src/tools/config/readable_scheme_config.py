@@ -6,7 +6,6 @@ READABLE_CHECKSUM_SEPARATOR = b'*'
 READABLE_PAYLOAD_SEPARATOR = b','
 OUR_TALKER = b'AP'
 
-#for CFG and FLA type
 WRITE_RAM = b'w'
 READ_RAM = b'r'
 WRITE_FLASH = b'W'
@@ -103,7 +102,6 @@ FORMAT_PNG = [
     ("code", int)
 ]
 
-#APGPS elements (derived from ublox NAV-PVT message):
 #APGPS,50057648,320315000.000,37.3990838,-121.9791725,-28.0670,1.8220,0.0360,232.6868,5.8751,5.8751,1.2600,3,20*72
 
 # payload:                      ex value

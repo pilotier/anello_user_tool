@@ -50,3 +50,6 @@ class Message:
     def __str__(self):
         return "Message: " + str(self.__dict__)
 
+    def __repr__(self):
+        return "Message: " + str(self.__dict__)
+
