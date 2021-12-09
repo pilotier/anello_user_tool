@@ -12,12 +12,12 @@ import os
 
 try:  # importing from inside the package
     import readable_scheme
-    from scheme import Message
+    from message_scheme import Message
     import connection
     from config.board_config import *
 except ModuleNotFoundError:  # importing from outside the package
     import tools.readable_scheme as readable_scheme
-    from tools.scheme import Message
+    from tools.message_scheme import Message
     import tools.connection
     from tools.config.board_config import *
 

@@ -7,12 +7,12 @@ import re
 import serial.tools.list_ports as list_ports
 try:  # importing from inside the package
     from readable_scheme import *
-    from scheme import Message
+    from message_scheme import Message
     from connection import *
     from config.board_config import *
 except ModuleNotFoundError:  # importing from outside the package
     from tools.readable_scheme import *
-    from tools.scheme import Message
+    from tools.message_scheme import Message
     from tools.connection import *
     from tools.config.board_config import *
 

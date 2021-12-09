@@ -1,9 +1,9 @@
 try:  # importing from inside the package
-    from scheme import Scheme, Message
+    from message_scheme import Scheme, Message
     from config.readable_scheme_config import *
     from connection import *
 except ModuleNotFoundError:  # importing from outside the package
-    from tools.scheme import Scheme, Message
+    from tools.message_scheme import Scheme, Message
     from tools.config.readable_scheme_config import *
     from tools.connection import *
 
