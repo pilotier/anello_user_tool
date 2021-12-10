@@ -58,8 +58,10 @@ class UserProgram:
                 action = MENU_OPTIONS[cutie.select(MENU_OPTIONS)]
                 if action == "Connect":
                     self.connect()
-                elif action == "Configure":
+                elif action == "Unit Configuration":
                     self.configure()
+                elif action == "Vehicle Configuration":
+                    self.vehicle_configure()
                 elif action == "Log":
                     self.log()
                 elif action == "Monitor":
@@ -74,6 +76,8 @@ class UserProgram:
                     self.refresh()
                 elif action == "Exit":
                     self.exit()
+                elif action == "Restart Unit":
+                    self.reset()
                 else:
                     raise Exception("invalid action: " + str(action))
             except (socket.error, socket.herror, socket.gaierror, socket.timeout, serial.SerialException, serial.SerialTimeoutException) as e:
@@ -329,6 +333,11 @@ class UserProgram:
             if not change_anyway:
                 return
 
+        #if setting odometer unit, first set odometer to on, then set the unit
+        if code == "odo":
+            args2 = {"odo": b'on'}
+            resp = self.retry_command(method=self.board.set_cfg_flash, args=[args2], response_types=[b'CFG', b'ERR'])
+
         resp = self.retry_command(method=self.board.set_cfg_flash, args=[args], response_types=[b'CFG', b'ERR'])
         if not proper_response(resp, b'CFG'):
             show_and_pause("") # proper_response already shows error, just pause to see it.
@@ -371,11 +380,75 @@ class UserProgram:
         resp = self.retry_command(method=board.get_cfg, args=[[]], response_types=[b'CFG'])
         #if proper_response(resp, b'CFG'):
         self.has_odo_port = ('rport3' in resp.configurations)
-        print("Configurations:")
+        print("Unit Configurations:")
         for name in resp.configurations:
             if name in CFG_FIELD_CODES:
                 full_name = CFG_FIELD_NAMES[CFG_FIELD_CODES.index(name)]
                 print("\t" + full_name + ":\t" + resp.configurations[name].decode())
+
+    # Vehicle Configs: same pattern as user configs
+    def vehicle_configure(self):
+        if not self.board:
+            show_and_pause("Must connect before configuring")
+            return
+        clear_screen()
+        if self.read_all_veh(self.board):  # show configs automatically
+            #check connection again since error can be caught in read_all_configs
+            if not self.con_on.value:
+                return
+            #print("configure:")
+            actions = ["Edit", "Done"]
+            selected_action = actions[cutie.select(actions)]
+            if selected_action == "Edit":
+                self.set_veh()
+                self.vehicle_configure()  # recursion to view/edit again until picking "done".
+            else:
+                return
+        else:
+            show_and_pause("not available - requires firmware upgrade")
+
+    #new version to set one 3-vector at a time
+    def set_veh(self):
+        print("\nselect configurations to write\n")
+        field_names = VEH_FIELDS.copy()
+
+        #choose which vehicle config
+        options = list(VEH_FIELDS.keys()) + ["cancel"]
+        chosen = options[cutie.select(options)]
+        if chosen == "cancel":
+            return
+
+        #enter the components of the chosen config
+        print("enter components for: "+chosen)
+        args = {} #dict of VEH to write
+        codes = VEH_FIELDS[chosen]
+        for axis, code in codes:
+            value = input(axis+": ").encode() #TODO - show better name like x,y,z?
+            args[code] = value
+
+        #send VEH message
+        resp = self.retry_command(method=self.board.set_veh_flash, args=[args], response_types=[b'VEH', b'ERR'])
+        if not proper_response(resp, b'VEH'):
+            show_and_pause("") # proper_response already shows error, just pause to see it.
+
+    # read all configurations. return true on success or false on fail
+    def read_all_veh(self, board):
+        resp = self.retry_command(method=board.get_veh_flash, args=[[]], response_types=[b'VEH', b'ERR'])
+        #retry until VEH (works) or ERR (fail). still retries on split message or checksum errors
+        if resp.msgtype == b'VEH': #read success -> print the configs
+            # if proper_response(resp, b'VEH'):
+            print("Vehicle Configurations:")
+            for name in VEH_FIELDS:
+                line = "    "+name+": "
+                for axis, code in VEH_FIELDS[name]:
+                    val_or_blank = "------"
+                    if code in resp.configurations:
+                        val_or_blank = axis+": "+resp.configurations[code].decode()
+                    line += val_or_blank+"    "
+                print(line)
+            return True
+        else:
+            return False
 
     # logging mode:
     # prompt for file name with default suggestion
@@ -751,6 +824,14 @@ class UserProgram:
                 show_and_pause("Entered upgrade mode. Run bootloader and then reconnect.")
         else:
             show_and_pause("\nMust connect by COM port before entering upgrade mode")
+
+    # send regular reset, not bootloading reset
+    def reset(self):
+        if self.board:
+            self.board.send_reset_regular()
+            #TODO - does it need to re-connect here or wait for reset to complete?
+        else:
+            show_and_pause("must connect to unit before resetting")
 
     def plot(self):
         show_and_pause("Not implemented yet")

@@ -12,7 +12,7 @@ WRITE_FLASH = b'W'
 READ_FLASH = b'R'
 
 #time as float # of ms, accel_x, accel_y, accel_z, rate_x, rate_y, rate_z, temperature with no counter
-#ex: GPCAL,71822.885,102,-103,4165,46,29,-6,1955*4C
+#ex: APCAL,71822.885,102,-103,4165,46,29,-6,1955*4C
 FORMAT_CAL = [
     ("time", float),
     ("accel_x", int),
@@ -102,6 +102,7 @@ FORMAT_PNG = [
     ("code", int)
 ]
 
+#APGPS elements (derived from ublox NAV-PVT message):
 #APGPS,50057648,320315000.000,37.3990838,-121.9791725,-28.0670,1.8220,0.0360,232.6868,5.8751,5.8751,1.2600,3,20*72
 
 # payload:                      ex value

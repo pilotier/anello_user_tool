@@ -8,7 +8,9 @@ def debug_print(text):
 MENU_OPTIONS = [
     "Refresh",
     "Connect",
-    "Configure",
+    "Restart Unit",
+    "Unit Configuration",
+    "Vehicle Configuration", #TODO - show this only when firmware version high enough / if unit responds to VEH,R
     "Log",
     "Monitor",
     "NTRIP",
@@ -99,6 +101,13 @@ ORN_8_OPTIONS = [
     "-X+Y-Z",
     "-Y-X-Z"
 ]
+
+VEH_FIELDS = {
+    "LEVER ARM 1": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
+    "LEVER ARM 2": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
+    "VEHICLE CENTER": (("x", "cnx"), ("y", "cny"), ("z", "cnz")),
+    "OUTPUT CENTER": (("x", "ocx"), ("y", "ocy"), ("z", "ocz"))
+}
 
 #UDP constants
 #A1_port1 = UDP_LOCAL_DATA_PORT

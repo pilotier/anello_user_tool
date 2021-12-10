@@ -112,6 +112,7 @@ class ReadableScheme(Scheme):
             b'ECH': self.set_payload_fields_ECH,
             b'ODO': self.set_payload_fields_ODO,
             b'INS': self.set_payload_fields_INS,
+            b'VEH': self.set_payload_fields_with_names
         }
         decoderFunc = decoders.get(msgtype)
         if decoderFunc:
@@ -123,6 +124,7 @@ class ReadableScheme(Scheme):
     def build_payload_for_type(self, message, msgtype):
         encoders = {
             b'CFG': self.build_payload_CFG,
+            b'VEH': self.build_payload_CFG,
             b'VER': self.build_payload_no_fields,
             b'SER': self.build_payload_no_fields,
             b'PID': self.build_payload_no_fields,

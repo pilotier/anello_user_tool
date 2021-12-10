@@ -9,6 +9,7 @@ import time
 import pathlib
 import math
 import os
+#from scipy.signal import welch
 
 try:  # importing from inside the package
     import readable_scheme
@@ -219,6 +220,15 @@ class Collector:
         # plt.title("time betweeen messages versus time")
         # plt.show()
 
+    def log_final_statistics_cal(self):
+        print("________Final Statistics:________")
+        print(str(self.statistics.__dict__))
+
+        for var in ["accel_x", "accel_y", "accel_z", "rate_x", "rate_y", "rate_z", "rate_fog", "temperature"]: #, "temperature_c"]:
+            print("statistics for " + var + ":")
+            values = self.get_vector(var) #[getattr(m, var) for m in self.messages]
+            print(str(self.one_var_statistics(values)))
+
     def one_var_statistics(self, val_list):
         statistics = {}
         statistics["length"] = len(val_list)
@@ -302,7 +312,7 @@ class Collector:
     def num_gps_messages(self):
         return len(self.gps_messages)
 
-    # plotting collected data - not in real-time
+    # plotting collected data with one variable against another
     def plot(self, independentVar, dependentVar, gps=False):
         if gps:
             messages_copy = copy.deepcopy(self.gps_messages)
@@ -312,10 +322,23 @@ class Collector:
             messages_copy = copy.deepcopy(self.messages)  # copy in case messages are still coming in
             independent_data = self.get_vector(independentVar)  # [getattr(m, independentVar) for m in messages_copy]
             dependent_data = self.get_vector(dependentVar)  # [getattr(m, dependentVar) for m in messages_copy]
+            if dependentVar == "delta_t":
+                independent_data = independent_data[1:] #fix size mismatch for delta t
         plt.plot(independent_data, dependent_data)
         plt.xlabel(independentVar)
         plt.ylabel(dependentVar)
         plt.title(dependentVar + " as a function of " + independentVar)
+        plt.show()
+
+    #plot a variable in message order, not vs another var
+    def plot_in_order(self, dependentVar, gps=False):
+        if gps:
+            dependent_data = self.get_vector_gps(dependentVar)
+        else:
+            dependent_data = self.get_vector(dependentVar)  # [getattr(m, dependentVar) for m in messages_copy]
+        plt.plot(dependent_data, "rx")
+        plt.ylabel(dependentVar)
+        plt.title(dependentVar + " in message order ")
         plt.show()
 
     # plot multiple variables versus 1. dependentVars is a list of variable name strings.
@@ -366,9 +389,81 @@ class Collector:
     def plot_all_rates(self):
         self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"], columns=1)
 
-    def plot_everything(self, ncols=2):
+    def plot_everything_imu(self, ncols=2):
         names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps", "temperature_c"]
         self.plot_multi_separately("imu_time_ms", names, columns=ncols)
+
+    def plot_everything_cal(self, ncols=2):
+        names = ["accel_x", "rate_x", "accel_y", "rate_y", "accel_z", "rate_z", "rate_fog", "temperature"]
+        self.plot_multi_separately("time", names, columns=ncols)
+
+    def plot_fog_cal(self):
+        #self.plot_multi_separately("time", ["rate_fog"], columns=1)
+        self.plot("time", "rate_fog")
+
+    # def plot_psd(self, var, freq):
+    #     analyse_data = self.get_vector(var)
+    #     f, Pxx = welch(analyse_data, freq)
+    #     plt.plot(f, Pxx)
+    #     plt.ylabel("psd")
+    #     plt.xlabel("frequency (Hz)")
+    #     plt.title("Welch Power Spectral Density of "+var)
+    #     plt.show()
+
+    #numpy.fft.fft(array, input length (default axis length), axis (default last one), norm(default backward))
+    def plot_fft(self, var):
+        analyse_data = self.get_vector(var)
+        out = np.fft.fft(analyse_data)
+        # print("complex output: ")
+        # print("out: "+str(out))
+        complex_magnitude = np.absolute(out)
+        complex_phase = np.angle(out)
+
+        #separate magnitude and phase plots
+        # plt.plot(complex_magnitude)
+        # plt.ylabel("magnitude")
+        # #plt.xlabel("frequency (Hz)")
+        # plt.title("FFT of "+var+": magnitude")
+        # plt.show()
+        #
+        # plt.plot(complex_phase)
+        # plt.ylabel("phase")
+        # # plt.xlabel("frequency (Hz)")
+        # plt.title("FFT of " + var+": phase")
+        # plt.show()
+
+        #try subplots?
+        fig, a = plt.subplots(nrows=2, ncols=1, sharex=True, sharey=False)
+        a.flat[0].plot(complex_magnitude)
+        a.flat[0].set_title(var+" fft magnitude", loc='center')
+        #a.flat[0].set_ylabel("magnitude", rotation=0, fontsize=7, labelpad=20)
+        a.flat[1].plot(complex_phase)
+        a.flat[1].set_title(var+" fft phase", loc='center')
+        #a.flat[0].set_ylabel("phase", rotation=0, fontsize=7, labelpad=20)
+        plt.show()
+
+    def plot_fft_vs_fft_freq(self, var, subtract_avg=True):
+        analyse_data = self.get_vector(var)
+        if subtract_avg:
+            analyse_data = analyse_data - np.ones(analyse_data.shape) * np.average(analyse_data)
+        fft_out = np.fft.fft(analyse_data)
+        # print("complex output: ")
+        # print("out: "+str(out))
+        complex_magnitude = np.absolute(fft_out)
+        freq = np.fft.fftfreq(analyse_data.shape[-1])
+
+        #separate magnitude and phase plots
+        #plt.plot(freq, complex_magnitude)
+        plt.semilogy(freq, complex_magnitude)
+        plt.ylabel("magnitude")
+        #plt.xlabel("frequency (Hz)")
+        plt.title("FFT of "+var+": magnitude")
+        plt.show()
+
+    def plot_times(self):
+        self.plot_in_order("imu_time_ms")
+        self.plot_in_order("delta_t")
+        self.plot("imu_time_ms", "delta_t")
 
     def plot_all_vs_temp(self, ncols=2):
         names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_dps"]

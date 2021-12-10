@@ -306,6 +306,7 @@ class IMUBoard:
         m = Message({'msgtype': b'PID'})
         return self.send_control_message(m)
 
+    #user config methods: can read/write in flash/ram
     def set_cfg(self, configurations):
         m = Message({'msgtype': b'CFG', 'mode': WRITE_RAM, 'configurations': configurations})
         return self.send_control_message(m)
@@ -320,6 +321,15 @@ class IMUBoard:
 
     def get_cfg_flash(self, names_list):
         m = Message({'msgtype': b'CFG', 'mode': READ_FLASH, 'configurations': names_list})
+        return self.send_control_message(m)
+
+    #vehicle config methods: only flash part is fully implemented now.
+    def set_veh_flash(self, configurations):
+        m = Message({'msgtype': b'VEH', 'mode': WRITE_FLASH, 'configurations': configurations})
+        return self.send_control_message(m)
+
+    def get_veh_flash(self, names_list):
+        m = Message({'msgtype': b'VEH', 'mode': READ_FLASH, 'configurations': names_list})
         return self.send_control_message(m)
 
     def get_status(self):
