@@ -1,5 +1,6 @@
-cutie==0.2.2
-matplotlib==3.3.3
-numpy==1.19.3
-pyserial==3.5
-PySimpleGUI==4.53.0
+cutie
+matplotlib
+numpy
+pyserial
+PySimpleGUI
+readchar==3.0.4 #force this version because 3.0.5 causes arrow key issues in windows 11
