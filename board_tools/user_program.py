@@ -628,24 +628,25 @@ class UserProgram:
         log_button = sg.Button(LOG_TEXT+TOGGLE_TEXT[self.log_on.value], key="log_button",  enable_events=True,
                                font = value_font, button_color=TOGGLE_COLORS[self.log_on.value])
 
-        time_since_gps_label = sg.Text("time since gps(s): ", size=MONITOR_LABEL_SIZE, font=label_font)
-        time_since_gps = sg.Text(MONITOR_DEFAULT_VALUE, key="since_gps", size=MONITOR_LABEL_SIZE, font=label_font)
-        time_since_ins_label = sg.Text("time since ins(s): ", size=MONITOR_LABEL_SIZE, font=label_font)
-        time_since_ins = sg.Text(MONITOR_DEFAULT_VALUE, key="since_ins", size=MONITOR_LABEL_SIZE, font=label_font)
+        time_since_gps_label = sg.Text("Time Since GPS (s): ", size=MONITOR_TIMELABEL_SIZE, font=label_font)
+        time_since_gps = sg.Text(MONITOR_DEFAULT_VALUE, key="since_gps", size=MONITOR_TIME_SIZE, font=label_font)
+        time_since_ins_label = sg.Text("Time Since INS (s): ", size=MONITOR_TIMELABEL_SIZE, font=label_font)
+        time_since_ins = sg.Text(MONITOR_DEFAULT_VALUE, key="since_ins", size=MONITOR_TIME_SIZE, font=label_font)
         buttons_row = [gps_button, log_button, time_since_gps_label, time_since_gps, time_since_ins_label, time_since_ins]
+        # buttons_row = [gps_button, log_button]
 
         #put rtk status in top row
-        gps_carrsoln_label = sg.Text("carrier soln: ", size=MONITOR_LABEL_SIZE, font=label_font)
-        gps_carrsoln = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_carrsoln", size=MONITOR_LATLON_SIZE, font=value_font)
-        gps_fix_label = sg.Text("gps fix type: ", size=MONITOR_LABEL_SIZE, font=label_font)
-        gps_fix = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_fix", size=MONITOR_LATLON_SIZE, font=value_font)
+        gps_carrsoln_label = sg.Text("Carrier Soln: ", size=MONITOR_LABEL_SIZE, font=label_font)
+        gps_carrsoln = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_carrsoln", size=MONITOR_VALUE_SIZE, font=value_font)
+        gps_fix_label = sg.Text("GPS Fix Type: ", size=MONITOR_LABEL_SIZE, font=label_font)
+        gps_fix = sg.Text(MONITOR_DEFAULT_VALUE, key="gps_fix", size=MONITOR_VALUE_SIZE, font=value_font)
         # carrier solution vs fix type - need both? put both for now.
 
         gps_fix_row = [gps_carrsoln_label, gps_carrsoln, gps_fix_label, gps_fix]
 
         #ins data: lat, lon, vx, vy, attitude x,y,z
-        lat = sg.Text(MONITOR_DEFAULT_VALUE, key="lat", size=MONITOR_LATLON_SIZE, font=value_font)
-        lon = sg.Text(MONITOR_DEFAULT_VALUE, key="lon", size=MONITOR_LATLON_SIZE, font=value_font)
+        lat = sg.Text(MONITOR_DEFAULT_VALUE, key="lat", size=MONITOR_VALUE_SIZE, font=value_font)
+        lon = sg.Text(MONITOR_DEFAULT_VALUE, key="lon", size=MONITOR_VALUE_SIZE, font=value_font)
         speed = sg.Text(MONITOR_DEFAULT_VALUE, key="speed", size=MONITOR_VALUE_SIZE, font=value_font)
         # vx = sg.Text(MONITOR_DEFAULT_VALUE, key="vx", size=MONITOR_VALUE_SIZE, font=value_font)
         # vy = sg.Text(MONITOR_DEFAULT_VALUE, key="vy", size=MONITOR_VALUE_SIZE, font=value_font)
@@ -655,16 +656,16 @@ class UserProgram:
         soln = sg.Text(MONITOR_DEFAULT_VALUE, key="soln", size=MONITOR_VALUE_SIZE, font=value_font)
         zupt = sg.Text(MONITOR_DEFAULT_VALUE, key="zupt", size=MONITOR_VALUE_SIZE, font=value_font)
 
-        lat_label = sg.Text("lat:", size=MONITOR_LABEL_SIZE, font=label_font)
-        lon_label = sg.Text("lon:", size=MONITOR_LABEL_SIZE, font=label_font)
-        speed_label = sg.Text("speed meters/sec:", size=MONITOR_LABEL_SIZE, font=label_font)
+        lat_label = sg.Text("Lattitude (deg):", size=MONITOR_LABEL_SIZE, font=label_font)
+        lon_label = sg.Text("Longitude (deg):", size=MONITOR_LABEL_SIZE, font=label_font)
+        speed_label = sg.Text("Speed (m/s):", size=MONITOR_LABEL_SIZE, font=label_font)
         #vx_label = sg.Text("velocity x:", size=MONITOR_LABEL_SIZE, font=label_font)
         #vy_label = sg.Text("velocity y:", size=MONITOR_LABEL_SIZE, font=label_font)
-        att0_label = sg.Text("roll degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
-        att1_label = sg.Text("pitch degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
-        att2_label = sg.Text("heading degrees:", size=MONITOR_LABEL_SIZE, font=label_font)
-        soln_label = sg.Text("ins solution:", size=MONITOR_LABEL_SIZE, font=label_font)
-        zupt_label = sg.Text("stationary:", size=MONITOR_LABEL_SIZE, font=label_font)
+        att0_label = sg.Text("Roll (deg):", size=MONITOR_LABEL_SIZE, font=label_font)
+        att1_label = sg.Text("Pitch (deg):", size=MONITOR_LABEL_SIZE, font=label_font)
+        att2_label = sg.Text("Heading (deg):", size=MONITOR_LABEL_SIZE, font=label_font)
+        soln_label = sg.Text("Solution:", size=MONITOR_LABEL_SIZE, font=label_font)
+        zupt_label = sg.Text("State:", size=MONITOR_LABEL_SIZE, font=label_font)
 
         latlon_row = [lat_label, lat, lon_label, lon]
         velocity_row = [speed_label, speed, att2_label, att2]

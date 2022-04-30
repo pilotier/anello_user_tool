@@ -148,26 +148,27 @@ EXPORT_INS_COLORS = {0: [0, 255, 0], 1: [255, 0, 0]}
 MONITOR_REFRESH_MS = 100 #100
 MONITOR_DEFAULT_VALUE = "--------------"
 ZERO_OUT_TIME = 5
-SGTHEME = "darkblue"
+SGTHEME = "DarkBlue"
 # BASE_WIDTH = 1124
 # BASE_HEIGHT = 554
-MONITOR_LATLON_SIZE = (12,1)
-MONITOR_VALUE_SIZE = (10, 1)
+MONITOR_TIMELABEL_SIZE = (16,1)
+MONITOR_TIME_SIZE = (6,1)
+MONITOR_VALUE_SIZE = (15, 1)
 FONT_NAME = "arial"
-VALUE_FONT_SIZE = 40
-MONITOR_LABEL_SIZE = (15,1)
-LABEL_FONT_SIZE = 12
+VALUE_FONT_SIZE = 25
+MONITOR_LABEL_SIZE = (12,1)
+LABEL_FONT_SIZE = 20
 GPS_TEXT = "GPS: "
 LOG_TEXT = "LOG: "
-TOGGLE_TEXT = {True:"on", False: "off"}
+TOGGLE_TEXT = {True:"ON", False: "OFF"}
 TOGGLE_COLORS = {True: "green", False: "red"}
 BUTTON_DISABLE_COLOR = "gray"
 GPS_SOLN_NAMES = {0: "No solution", 1: "Float", 2: "Fix"}
-GPS_FIX_NAMES = {0: "no fix",
-                 1: "dead reckoning only",
-                 2: "2D-fix",
-                 3: "3D-fix",
-                 4: "GNSS + dead reckoning combined",
-                 5: "time only fix" } #from nav-pvt fix-type: see https://www.u-blox.com/en/docs/UBX-18010854
-INS_SOLN_NAMES = {0: "attitude", 1: "position", 2: "heading", 3: "RTK float", 4: "RTK fix"} #TODO check these too
-ZUPT_NAMES = {0: "moving", 1: "stationary"}
+GPS_FIX_NAMES = {0: "No Fix",
+                 1: "Dead Reckoning Only",
+                 2: "2D-Fix",
+                 3: "3D-Fix",
+                 4: "GNSS + Dead Reckoning",
+                 5: "Time Only Fix" } #from nav-pvt fix-type: see https://www.u-blox.com/en/docs/UBX-18010854
+INS_SOLN_NAMES = {0: "Attitude Only", 1: "INS (Pos. Only)", 2: "INS (Full Soln.)", 3: "RTK Float", 4: "RTK Fix"} #TODO check these too
+ZUPT_NAMES = {0: "Moving", 1: "Stationary"}
