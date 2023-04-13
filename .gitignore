@@ -1,0 +1,11 @@
+.idea/
+logs/
+exports/
+*.png
+__pycache__
+*.txt
+!requirements.txt
+**/*.pyBak.py
+**/*.bak
+.DS_Store
+../.DS_Store

@@ -1,8 +1,12 @@
 __pycache__
 src/tools/logs/*
-exports/*
 venv/
 .idea/
 *.txt
 *.csv
 *.nmea
+*.dat
+*.hex
+teseo_logs/*
+*.bak
+HtxAurix.tmp
