@@ -383,12 +383,12 @@ class UserProgram:
         options = CFG_VALUE_OPTIONS["orn"]
         chosen = options[cutie.select(options)]
         if "+X+Y+Z" in chosen:
-            return b'+X+Y+Z'
+            return '+X+Y+Z'
         elif "+Y+X-Z" in chosen:
-            return b'+Y+X-Z'
+            return '+Y+X-Z'
         else:  # select it yourself
             print("\nenter value for orientation "+ CFG_FIELD_EXAMPLES["orn"])
-            return input().encode()
+            return input()
 
     #firmware 0.3.4 or later: 8 orientations: must end in +-Z -> show all 8
     def select_orn_8_opts(self):
@@ -397,12 +397,12 @@ class UserProgram:
         chosen = options[cutie.select(options)]
         #allow notes like (north east up) in the name
         if "+X+Y+Z" in chosen:
-            return b'+X+Y+Z'
+            return '+X+Y+Z'
         elif "+Y+X-Z" in chosen:
-            return b'+Y+X-Z'
+            return '+Y+X-Z'
         else:
             #if no note, the value is correct
-            return chosen.encode()
+            return chosen
 
     # read all configurations.
     def read_all_configs(self, board):
