@@ -176,6 +176,7 @@ def export_log_by_format(file_path, format="rtcm"):
     # line = line.strip(start_char)
 
     #print("line: "+line.decode())
+    errors_count = 0
     line_num = 0
     while True: #until read empty - TODO figure out the loop condition
 
@@ -218,7 +219,7 @@ def export_log_by_format(file_path, format="rtcm"):
             out_file.write(out_line) # outputs[m.msgtype].write(out_line)
 
         else:
-            pass
+            errors_count += 1
             #print("invalid message: "+str(m))
 
     reader.close()
@@ -227,6 +228,12 @@ def export_log_by_format(file_path, format="rtcm"):
     imu_out.close()
     im1_out.close()
     hdg_out.close()
+
+    if errors_count == 1:
+        print(f"\n1 message failed to parse")
+    elif errors_count > 0:
+        print(f"\n{errors_count} messages failed to parse")
+
     return True #indicate success. TODO - check for errors and return error code/False?
 
 

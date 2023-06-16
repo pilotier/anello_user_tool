@@ -5,6 +5,7 @@ from bitstring import Bits
 from pyrtcm import RTCMReader, crc2bytes, calc_crc24q
 try:  # importing from inside the package
     from pyrtcm import RTCMReader, RTCMParseError
+    from pyrtcm.rtcmtypes_core import ERR_RAISE, ERR_LOG, ERR_IGNORE
     from class_configs.rtcm_scheme_config import * #TODO make config file with fomats
     from readable_scheme import extract_flags_HDG
     from message_scheme import Scheme, Message
@@ -34,21 +35,23 @@ class RTCM_Scheme(Scheme):
     #read one message from file using RTCMReader . could use that for usb or ethernet reading too
     def read_message_from_file(self, input_file):
         if (not hasattr(self, "reader")) or self.reader is None:
-            self.reader = RTCMReader(input_file)
+            self.reader = RTCMReader(input_file, quitonerror=ERR_RAISE) #ERR_RAISE means errors raise RTCMParseError
         message = Message()
+        parsed = None  # for error handlers if reader.read() fails
         try:
             raw, parsed = self.reader.read()
-            #strip off preamble then pass the raw data to set_fields_general.
-            #or if using parsed, it would already have the message tye (4058) and checksum split from payload
             if raw:
                 data = raw.lstrip(RTCM_PREAMBLE)
                 self.set_fields_general(message, data)
-            else: #complete. TODO - is this the correct check for end of file? seems to work.
+            elif parsed is None:  # end of file returns (raw = None, parsed = None)
                 return None
-        except RTCMParseError: #error from RTCMReader.read if checksum fails
+            else:  # errors could return (None, Error Code) but should raise RTCMParseERROR if using ERR_RAISE
+                message.valid = False
+                message.error = "RTCM parsing error" # + str(parsed)
+        except RTCMParseError:  # errors from RTCMReader.read
             message.valid = False
-            message.error = "checksum"
-        except Exception as e: #catchall error
+            message.error = "RTCM parsing error" # + str(parsed)
+        except Exception as e:  # catchall error
             message.valid = False
             message.error = "parsing error: "+str(e)
         return message
