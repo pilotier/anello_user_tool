@@ -53,11 +53,12 @@ CFG_CODES_TO_NAMES = {
     "mfm":    "Message Format                          ",
     "uart":   "Serial Output                           ",
     "eth":    "Ethernet Output                         ",
+    "sync":   "Time Sync                               ",
+    "ptp":    "PTP Mode                                ",
     "lpa":    "Acceleration Low Pass Filter Cutoff (Hz)",
     "lpw":    "MEMS Gyro Low Pass Filter Cutoff (Hz)   ",
     "lpo":    "Optical Gyro Low Pass Filter Cutoff (Hz)",
     #"nhc":    "Non-Holonomic Constraint                ", #TODO - hide this for now?
-    "sync":   "Time Sync                               ",
     "min":    "Configuration Print Interval (minutes)  ", #TODO - do we want to show this?
     "ntrip":  "NTRIP Input Channel                     ",
 }
@@ -90,6 +91,7 @@ CFG_VALUE_OPTIONS = {
     "sync": ["on", "off"],
     #"nhc": ["0", "1", "2", "7"], #see CFG_VALUE_NAMES
     "ntrip": ["0", "1", "2"],
+    "ptp":  ["master", "slave"],
 }
 
 CFG_VALUE_NAMES = {
