@@ -91,7 +91,7 @@ CFG_VALUE_OPTIONS = {
     "sync": ["on", "off"],
     #"nhc": ["0", "1", "2", "7"], #see CFG_VALUE_NAMES
     "ntrip": ["0", "1", "2"],
-    "ptp":  ["master", "slave"],
+    "ptp":  ["off", "master", "slave"],
 }
 
 CFG_VALUE_NAMES = {
