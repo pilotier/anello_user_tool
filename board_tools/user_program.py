@@ -58,7 +58,7 @@ class UserProgram:
         self.last_ins_msg, self.last_gps_msg, self.last_gp2_msg, self.last_imu_msg, self.last_hdg_msg = last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg
 
         #any features which might or not be there - do based on firmware version?
-        self.has_odo_port = False
+        self.available_configs = []
 
         #self.map_cache = {} #cache for map tiles. or could use lru.LRU[max_items] to avoid overfilling
         #self.map_cache = LRU(MAX_CACHE_TILES) #TODO - calculate how many tiles we can store in memory
@@ -319,20 +319,12 @@ class UserProgram:
 
     def set_cfg(self):
         print("\nselect configurations to write\n")
-        # hide udp settings if connected by udp. otherwise you can break the connection. or should we allow it?
-        #skip_indices = UDP_FIELD_INDICES if self.connection_info["type"] == "UDP" else []
 
-        #check if it has odometer port or not, then show/hide in options
-        field_names = list(CFG_CODES_TO_NAMES.values())
-        field_codes = list(CFG_CODES_TO_NAMES.keys())
+        # allow setting only the configs which come back from the read, in that order.
+        field_codes = [code for code in self.available_configs if code in CFG_CODES_TO_NAMES]
+        field_names = [CFG_CODES_TO_NAMES[code] for code in field_codes]
 
-        #don't allow setting rport3 if read didn't have it. TODO - do this for other configs too?
-        if not self.has_odo_port:
-            ind = field_codes.index('rport3')
-            field_names.pop(ind)
-            field_codes.pop(ind)
-
-        #cutie select for index, including cancel.
+        # cutie select for index, including cancel.
         # TODO - if bidict, can do name = options[cutie.select(options)], code = dict[name] , instead of index
         options = field_names + ["cancel"]
         selected_index = cutie.select(options)
@@ -408,7 +400,7 @@ class UserProgram:
     def read_all_configs(self, board):
         resp = self.retry_command(method=board.get_cfg_flash, args=[[]], response_types=[b'CFG'])
         if proper_response(resp, b'CFG'):
-            self.has_odo_port = ('rport3' in resp.configurations)
+            self.available_configs = list(resp.configurations.keys())
             print("Unit Configurations:")
             for cfg_field_code in resp.configurations:
                 if cfg_field_code in CFG_CODES_TO_NAMES:
