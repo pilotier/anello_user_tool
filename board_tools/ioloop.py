@@ -176,6 +176,8 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
     ascii_scheme = ReadableScheme()
     binary_scheme = RTCM_Scheme()
 
+    buffered_partial_message = b''
+
     while True:
         time.sleep(1e-3) #slow down loop to reduce cpu use, 1 ms wait should be fine
         #first handle all start/stop signals.
@@ -286,16 +288,19 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
 
                     #use readall to make sure it's up to date. could read one or multiple messages.
                     in_data = data_connection.readall()
+                    debug_print(f"\nin data: <{in_data}>")
+
+                    data_for_monitor = buffered_partial_message + in_data # combine with any leftover data
+                    debug_print(f"data for monitor: {data_for_monitor}")
 
                     #try handling as ascii and rtcm and do whichever works. TODO - make a combined parser?
+                    last_parts_all_formats = []
+
                     for parse_scheme, start_char in [(ascii_scheme, READABLE_START), (binary_scheme, RTCM_PREAMBLE)]:
-                        #parts = in_data.split(READABLE_START) #TODO - do a read_one_message from this?
-                        #parts = in_data.split(RTCM_PREAMBLE)
-                        parts = in_data.split(start_char) #TODO - do a read_one_message from buffer instead? this will split on start char in message.
+                        parts = data_for_monitor.split(start_char) #TODO - do a read_one_message from buffer instead? this will split on start char in message.
+                        debug_print(f"parts splitting on {start_char}:")
                         for part in parts:
-                            #last_msg = binary_scheme.parse_message(part)
-                            #last_msg = ascii_scheme.parse_message(part)
-                            #print(f"will parse using {parse_scheme}, part = {part}")
+                            debug_print(f"\t{part}")
                             last_msg = parse_scheme.parse_message(part)
                             #print(f"last_msg: {last_msg}")
                             if not last_msg.valid:
@@ -325,6 +330,23 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                             elif last_msg.msgtype == b'GP2':
                                 #print(f"\nlast_gp2_msg {type(parse_scheme)}:\n{part}")
                                 last_gp2_msg.value = part # save if needed for ntrip start or delayed sending
+
+                        # if the last part is not a complete message, keep it to finish later.
+                        last_part = parts[-1]
+                        if last_msg.valid:
+                            last_parts_all_formats.append(b'') # empty 'last part' if complete, so it is shortest
+                        else:
+                            debug_print(f"\ninvalid last part for {start_char}: {last_part}\n")
+                            #print(f"invalid last message: {last_msg}")
+                            last_parts_all_formats.append(last_part)
+
+                    # use the smaller of the invalid last parts which should match the correct format.
+                    # TODO - could this be wrong if # appears in RTCM message? may need other check for right format.
+                    #print(f"last_parts_all_formats: {last_parts_all_formats}")
+                    last_part = min(last_parts_all_formats, key=lambda x: len(x))
+                    debug_print(f"\nsmaller last part: {last_part}")
+                    buffered_partial_message = last_part
+
                     if log_on and log_file: #TODO - what about close in mid-write? could pass message and close here. or catch exception
                         #pass
                         #debug_print(in_data.decode())
