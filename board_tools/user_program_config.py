@@ -61,6 +61,7 @@ CFG_CODES_TO_NAMES = {
     #"nhc":    "Non-Holonomic Constraint                ", #TODO - hide this for now?
     "min":    "Configuration Print Interval (minutes)  ", #TODO - do we want to show this?
     "ntrip":  "NTRIP Input Channel                     ",
+    "nmea":   "NMEA GGA output                         ",
 }
 
 #UDP_FIELD_INDICES = [5, 6, 7, 8, 9]  # udp related field positions in CFG_FIELD_NAMES / CODES
@@ -92,6 +93,7 @@ CFG_VALUE_OPTIONS = {
     #"nhc": ["0", "1", "2", "7"], #see CFG_VALUE_NAMES
     "ntrip": ["0", "1", "2"],
     "ptp":  ["off", "master", "slave"],
+    "nmea": ["0", "1"],
 }
 
 CFG_VALUE_NAMES = {
@@ -110,6 +112,8 @@ CFG_VALUE_NAMES = {
     ("ntrip", "0"): "off",
     ("ntrip", "1"): "serial",
     ("ntrip", "2"): "ethernet",
+    ("nmea", "0"): "off",
+    ("nmea", "1"): "on",
 }
 
 #can have notes for just 2 cases now - if more notes needed, do another list or dictionary
