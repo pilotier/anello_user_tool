@@ -129,10 +129,22 @@ ORN_8_OPTIONS = [
 ]
 
 VEH_FIELDS = {
-    "GPS Antenna 1 ": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
-    "GPS Antenna 2 ": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
-    "Vehicle Center": (("x", "cnx"), ("y", "cny"), ("z", "cnz")), #TODO - rename to rear axle center?
-    "Output Center ": (("x", "ocx"), ("y", "ocy"), ("z", "ocz"))
+    "GPS Antenna 1    ": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
+    "GPS Antenna 2    ": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
+    "Vehicle Center   ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")), #TODO - rename to rear axle center?
+    "Output Center    ": (("x", "ocx"), ("y", "ocy"), ("z", "ocz")),
+    "Odometer Position": (("x", "wsx"), ("y", "wsy"), ("z", "wsz")),
+
+    #"Antenna Baseline": (( "", "bsl"),),
+    #"Baseline Calibration" : (( "", "bcal"),),
+    "Antenna Baseline": "bsl",
+    "Baseline Calibration": "bcal",
+
+    #"Odometer     " : (("ticks per rev", "tic"), ("wheel radius", "rad")), #to put as one line, edit together
+    #"Ticks per rev ": (("", "tic"), ), #or separate lines
+    #"Wheel radius  ": (("", "rad"), ),
+    "Ticks per rev ": "tic", #or separate lines
+    "Wheel radius  ": "rad",
 }
 
 #UDP constants

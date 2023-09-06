@@ -331,3 +331,37 @@ HEADING_FLAGS = {
     8: "relPosHeading_Valid",
     9: "relPos_Normalized",
 }
+
+# put VEH options here so VEH methods can go in IMUBoard. originally in user_progra_config.py
+VEH_FIELDS = {
+    "GPS Antenna 1    ": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
+    "GPS Antenna 2    ": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
+    "Vehicle Center   ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")), #TODO - rename to rear axle center?
+    "Output Center    ": (("x", "ocx"), ("y", "ocy"), ("z", "ocz")),
+    "Odometer Position": (("x", "wsx"), ("y", "wsy"), ("z", "wsz")),
+
+    #"Antenna Baseline": (( "", "bsl"),),
+    #"Baseline Calibration" : (( "", "bcal"),),
+    "Antenna Baseline": "bsl",
+    "Baseline Calibration": "bcal",
+
+    #"Odometer     " : (("ticks per rev", "tic"), ("wheel radius", "rad")), #to put as one line, edit together
+    #"Ticks per rev ": (("", "tic"), ), #or separate lines
+    #"Wheel radius  ": (("", "rad"), ),
+    "Ticks per rev ": "tic", #or separate lines
+    "Wheel radius  ": "rad",
+}
+
+ERROR_CODES = {
+    1: "No start character",
+    2: "Missing r/w for config",
+    3: "Incomplete Message",
+    4: "Invalid Checksum",
+    5: "Invalid Talker code",
+    6: "Invalid Message Type",
+    7: "Invalid Field",
+    8: "Invalid Value",
+    9: "Flash Locked",
+    10: "Unexpected Character",
+    11: "Feature Disabled"
+}

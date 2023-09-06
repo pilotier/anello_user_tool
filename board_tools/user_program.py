@@ -419,7 +419,9 @@ class UserProgram:
             show_and_pause("Must connect before configuring")
             return
         clear_screen()
-        if self.read_all_veh(self.board):  # show configs automatically
+        veh_read_str = self.board.read_all_veh_terminal_interface()
+        if veh_read_str:  # show configs automatically
+            print(veh_read_str)
             #check connection again since error can be caught in read_all_configs
             if not self.con_on.value:
                 return
@@ -427,55 +429,13 @@ class UserProgram:
             actions = ["Edit", "Done"]
             selected_action = actions[cutie.select(actions)]
             if selected_action == "Edit":
-                self.set_veh()
+                self.board.set_veh_terminal_interface()
                 self.vehicle_configure()  # recursion to view/edit again until picking "done".
             else:
                 return
         else:
             show_and_pause("Error reading vehicle configs. Try again or check cables."
                            "\nOld firmware versions may not have this feature.\n")
-
-    #new version to set one 3-vector at a time
-    def set_veh(self):
-        print("\nselect configurations to write\n")
-        field_names = VEH_FIELDS.copy()
-
-        #choose which vehicle config
-        options = list(VEH_FIELDS.keys()) + ["cancel"]
-        chosen = options[cutie.select(options)]
-        if chosen == "cancel":
-            return
-
-        #enter the components of the chosen config
-        print("enter components for: "+chosen)
-        args = {} #dict of VEH to write
-        codes = VEH_FIELDS[chosen]
-        for axis, code in codes:
-            value = input(axis+": ").encode() #TODO - show better name like x,y,z?
-            args[code] = value
-
-        #send VEH message
-        resp = self.retry_command(method=self.board.set_veh_flash, args=[args], response_types=[b'VEH', b'ERR'])
-        if not proper_response(resp, b'VEH'):
-            show_and_pause("") # proper_response already shows error, just pause to see it.
-
-    # read all configurations. return true on success or false on fail
-    def read_all_veh(self, board):
-        resp = self.retry_command(method=board.get_veh_flash, args=[[]], response_types=[b'VEH', b'ERR'])
-        #retry until VEH (works) or ERR (fail). still retries on split message or checksum errors
-        if proper_response(resp, b'VEH'): #read success -> print the configs
-            print("Vehicle Configurations: 3d vectors in meters, measured from the Anello unit")
-            for name in VEH_FIELDS:
-                line = "    "+name+": "
-                for axis, code in VEH_FIELDS[name]:
-                    val_or_blank = "------"
-                    if code in resp.configurations:
-                        val_or_blank = axis+": "+resp.configurations[code].decode()
-                    line += val_or_blank+"    "
-                print(line)
-            return True
-        else:
-            return False
 
     # logging mode:
     # prompt for file name with default suggestion

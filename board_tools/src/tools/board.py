@@ -764,3 +764,183 @@ class IMUBoard:
             #TODO - should this time out eventually -> retry connection?
             #print("waiting on reset")
             time.sleep(wait_time)
+
+    # bootloader function taking hex file path and expected version after
+    def bootload_with_file_path(self, hex_file_path, expected_version_after, num_attempts=3):
+        #check OS. os.name = 'nt' for windows, 'posix' for Linux and Mac.
+        if os.name != 'nt':
+            print("bootloader currently works on Windows only, canceling.")
+            return
+
+        current_version = self.retry_get_version().decode()
+        print(f"\nUpdating from current version {current_version} to {expected_version_after}")
+
+        # if expected_version_after == current_version:
+        #     print(f"already on version: {expected_version_after}: skipping.") #TODO - give option to do it anyway?
+        #     return
+
+        print("\nKeep plugged in until upgrade finishes. If errors show, hit enter to retry.")
+
+        attempt = 1
+        while True:
+            self.enter_bootloading()
+            self.release_connections()
+            #send bootloader commands. TODO - should it use subprocess.call() instead of os.system()?
+            os.system(".\HtxAurixBootLoader.exe START TC36X 6 {} 115200 0 0 0 0".format(self.data_port_name[3:]))
+            #note - [3:] will work for windows "COM" port numbers, not on other os. But this bootloader is windows only.
+            os.system(".\HtxAurixBootLoader.exe PROGRAMVERIFY \"{}\" 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000 0x0".format(
+                hex_file_path))
+            os.system(".\HtxAurixBootLoader.exe END")
+
+            #connect again after disconnect (this is specific to serial connection). TODO - handle errors here?
+            self.reconnect_serial()
+            #self.connect_to_ports(data_port=self.data_port_name, control_port=self.control_port_name)
+
+            # Check SW Version
+            if expected_version_after == "unknown":
+                break #means we don't check the version after, assume success.
+            if expected_version_after == self.retry_get_version().decode(): #TODO handle None response -> decode will fail
+                break
+            else:
+                if attempt > num_attempts:
+                    assert False, f"Failed to Upgrade System after {num_attempts} attempts"
+            attempt += 1
+
+    def get_all_cfg(self):
+        self.unlock_flash()
+        unit_dict = {}
+        unit_dict["User Configuration"] = convert_cfg_code_to_field(
+            convert_dict_values_to_str(
+                self.retry_get_cfg_flash_all()
+            )
+        )
+        unit_dict["Factory Configuration"] = convert_factory_code_to_field(
+            convert_dict_values_to_str(
+                self.retry_read_flash_all()
+            )
+        )
+        unit_dict["Vehicle Configuration"] = convert_dict_values_to_str(
+            self.retry_get_veh_flash_all()
+        )
+        unit_dict["Sensor Configuration"] = convert_sensor_code_to_field(
+            convert_dict_values_to_str(
+                self.retry_get_sensor_all()
+            )
+        )
+        unit_dict["Software Version"] = self.retry_get_version().decode()
+        return unit_dict
+
+    def set_all_cfg(self, cfg):
+        if "User Configuration" in cfg.keys():
+            for user_config in cfg["User Configuration"].items():
+                self.retry_set_cfg_flash(
+                    convert_cfg_field_to_code(
+                        convert_dict_values_to_bin({user_config[0]: user_config[1]})
+                    )
+                )
+
+        if "Factory Configuration" in cfg.keys():
+            self.retry_write_flash(
+                convert_factory_field_to_code(
+                    convert_dict_values_to_bin(cfg["Factory Configuration"])
+                )
+            )
+
+        if "Vehicle Configuration" in cfg.keys():
+            for user_config in cfg["Vehicle Configuration"].items():
+                self.retry_set_veh_flash(
+                    convert_dict_values_to_bin({user_config[0]: user_config[1]})
+                )
+
+        if "Sensor Configuration" in cfg.keys():
+            for user_config in cfg["Sensor Configuration"].items():
+                self.retry_set_sensor(
+                    convert_sensor_field_to_code(
+                        convert_dict_values_to_bin({user_config[0]: user_config[1]})
+                    )
+                )
+        try:
+            baud_after = cfg["User Configuration"]["Baud"]
+        except KeyError:
+            baud_after = None #None means baud does not change.
+        self.reset_with_waits(new_baud=baud_after)
+        self.setup_data_port()
+
+
+    # to set vehicle configs in terminal with cutie. put here to share with user_program.py and config.py
+    def set_veh_terminal_interface(self):
+        print("\nselect configurations to write\n")
+        field_names = VEH_FIELDS.copy()
+
+        # choose which vehicle config to set
+        # TODO - only give options which show in a read? prevent setting antenna baseline?
+        options = list(VEH_FIELDS.keys()) + ["cancel"]
+        chosen = options[cutie.select(options)]
+        if chosen == "cancel":
+            return
+
+        # enter the components of the chosen config
+        print(f"\nenter {chosen}:")
+        args = {}  # dict of VEH to write
+        grouping = VEH_FIELDS[chosen]
+
+        # grouping like x/y/z parts: ask for each of them
+        if type(grouping) is tuple:
+            for axis, code in grouping:
+                value = input(axis + ": ").encode()
+                args[code] = value
+
+        # single config: just ask for the one
+        elif type(grouping) is str:
+            value = input(grouping + ": ").encode()
+            args[grouping] = value
+
+        # send VEH message
+        # resp = retry_command(method=self.board.set_veh_flash, args=[args], response_types=[b'VEH', b'ERR'])
+        resp = self.set_veh_flash(args)  # TODO - retry on error or wrong response type?
+        if not proper_response(resp, b'VEH'):
+            input()  # proper_response already shows error, just pause to see it.
+
+    # change it to return a string that can be printed. on fail, return emtpy string.
+    def read_all_veh_terminal_interface(self):
+        # resp = retry_command(method=board.get_veh_flash, args=[[]], response_types=[b'VEH', b'ERR'])
+        resp = self.get_veh_flash([])  # TODO - try retry_get_veh_flash_all() instead?
+        if resp.msgtype == b'VEH':  # read success -> print the configs
+            # if proper_response(resp, b'VEH'):
+            out_str = "\nVehicle Configurations:"
+
+            for name, grouping in VEH_FIELDS.items():
+
+                # tuple means multi-part like x/y/z: show all in one line, blank any missing
+                if type(grouping) is tuple:
+                    line = "\n    " + name + ": "
+                    for axis, code in VEH_FIELDS[name]:
+                        val_or_blank = "------"
+                        if code in resp.configurations:
+                            val_or_blank = axis + ": " + resp.configurations[code].decode()
+                        line += val_or_blank + "    "
+                    out_str += line
+
+                # single config: show it only if in the response.
+                elif type(grouping) is str and grouping in resp.configurations:
+                    line = "\n    " + name + ": " + resp.configurations[grouping].decode()
+                    out_str += line
+            return out_str
+        else:
+            return ""  # indicates fail
+
+
+def proper_response(message, expected_types):
+    if not message:
+        return False
+    if not message.valid:  # actual problem with the message format or checksum fail, don't expect this
+        print("\nMessage parsing error: " + message.error)
+        return False
+    elif message.msgtype in expected_types:
+        return True
+    elif message.msgtype == b'ERR':  # Error message, like if you sent a bad request
+        print("\nError: " + ERROR_CODES[message.err])
+        return False
+    else:
+        print('\nUnexpected response type: ' + message.msgtype.decode())
+        return False
