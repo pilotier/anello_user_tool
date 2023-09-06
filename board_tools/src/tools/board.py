@@ -892,7 +892,13 @@ class IMUBoard:
 
         # single config: just ask for the one
         elif type(grouping) is str:
-            value = input(grouping + ": ").encode()
+            if grouping in VEH_VALUE_OPTIONS:
+                # if there are options: pick from the options, showing as a name if there are names.
+                value_options = VEH_VALUE_OPTIONS[grouping]
+                name_options = [VEH_VALUE_NAMES.get((grouping, val), val) for val in value_options]
+                value = value_options[cutie.select(name_options)].encode()
+            else:
+                value = input(grouping + ": ").encode()
             args[grouping] = value
 
         # send VEH message

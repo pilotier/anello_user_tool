@@ -352,6 +352,16 @@ VEH_FIELDS = {
     "Wheel radius  ": "rad",
 }
 
+VEH_VALUE_OPTIONS = { #each entry is tuple of 1: value options, 2: alternate names, or None (if None, values are names)
+    "bcal": ["1", "2", "99"],
+}
+
+VEH_VALUE_NAMES = {
+    ("bcal", "1"): "Auto calibrate",
+    ("bcal", "2"): "From lever arms",
+    ("bcal", "99"): "Reset",
+}
+
 ERROR_CODES = {
     1: "No start character",
     2: "Missing r/w for config",
