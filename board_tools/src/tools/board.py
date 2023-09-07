@@ -919,15 +919,19 @@ class IMUBoard:
                 if type(grouping) is tuple:
                     line = "\n    " + name + ": "
                     for axis, code in VEH_FIELDS[name]:
-                        val_or_blank = "------"
+                        named_value = "------"  # show blank if not found
                         if code in veh_configs:
-                            val_or_blank = axis + ": " + veh_configs[code].decode()
-                        line += val_or_blank + "    "
+                            raw_val = veh_configs[code].decode()
+                            # show the name if there is one
+                            named_value = VEH_VALUE_NAMES.get((code, raw_val), raw_val)
+                        line += axis + ": " + named_value + "    "
                     out_str += line
 
                 # single config: show it only if in the response.
                 elif type(grouping) is str and grouping in veh_configs:
-                    line = "\n    " + name + ": " + veh_configs[grouping].decode()
+                    raw_val = veh_configs[grouping].decode()
+                    named_value = VEH_VALUE_NAMES.get((grouping, raw_val), raw_val)
+                    line = "\n    " + name + ": " + named_value
                     out_str += line
             return out_str
         else:
