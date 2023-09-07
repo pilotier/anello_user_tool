@@ -649,8 +649,8 @@ class IMUBoard:
                     debug_print(f"{method.__name__}: {configs_dict} resp failed check (wrong type, type {resp.msgtype}, error {resp.err if hasattr(resp, 'err') else resp.error}), retrying")
                 elif not hasattr(resp, "configurations"):
                     debug_print(f"{method.__name__}: {configs_dict} resp failed check (no configurations, type {resp.msgtype}, error {resp.err if hasattr(resp, 'err') else resp.error}), retrying")
-                elif resp.configurations != configs_dict:
-                    debug_print(f"{method.__name__}: {configs_dict} resp had wrong configurations, retrying.\nresponse:{resp.configurations}\nexpected:{configs_dict}")
+                elif configs_different(configs_dict, resp.configurations):
+                    debug_print( f"{method.__name__}: {configs_dict} resp had wrong configurations, retrying.\nresponse:{resp.configurations}\nexpected:{configs_dict}")
                 else:
                     return True
 
@@ -901,10 +901,10 @@ class IMUBoard:
 
         write_success = self.retry_set_veh_flash(args)
         # skip error check for now since it thinks response 1.000000 doesn't match value 1, etc. TODO - check as number?
-        # if not write_success:
-        #     print("Error setting Vehicle configs: try again or check connections")
-        #     print("enter to continue")
-        #     input()
+        if not write_success:
+            print("Error setting Vehicle configs: try again or check connections")
+            print("enter to continue")
+            input()
 
     # change it to return a string that can be printed. on fail, return emtpy string.
     def read_all_veh_terminal_interface(self):
@@ -932,3 +932,32 @@ class IMUBoard:
             return out_str
         else:
             return ""  # indicates fail
+
+
+# compare expected vs actual configs and print the differences - copied from config.py
+# remove config_type_str for simplicity -> do tolerance abs check for anything that can convert to float?
+def configs_different(expected_configs, confirmed_configs):
+    #actual_user = read_cfg.configurations
+    veh_tolerance = 0.000001 #have tolerance for floats in vehicle . TODO - use this for any float type?
+    differences = "" #TODO - change to dictionary or tuple from string?
+    for name in expected_configs:
+
+        # try comparing as floats: may have ValueError
+        try:
+            float_difference = abs(float(expected_configs[name]) - float(confirmed_configs[name]))
+            both_float = True
+        except ValueError:
+            float_difference = None
+            both_float = False
+
+        if name not in confirmed_configs:
+            differences += f"{name}: expected {expected_configs[name]} , was missing\n"
+        elif both_float and float_difference < veh_tolerance:
+            continue #skip the != check below since it's close enough
+        elif expected_configs[name] != confirmed_configs[name]: #need tolerance for float types
+            differences += f"{name}: expected {expected_configs[name]} , was {confirmed_configs[name]}\n"
+    if differences:
+        debug_print(f"\nSome configs failed to write. differences:\n{differences}")
+    else:
+        debug_print(f"\nAll configs wrote successfully")
+    return differences
