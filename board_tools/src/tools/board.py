@@ -866,11 +866,9 @@ class IMUBoard:
         self.reset_with_waits(new_baud=baud_after)
         self.setup_data_port()
 
-
     # to set vehicle configs in terminal with cutie. put here to share with user_program.py and config.py
     def set_veh_terminal_interface(self):
         print("\nselect configurations to write\n")
-        field_names = VEH_FIELDS.copy()
 
         # choose which vehicle config to set
         # TODO - only give options which show in a read? prevent setting antenna baseline?
@@ -901,17 +899,17 @@ class IMUBoard:
                 value = input(grouping + ": ").encode()
             args[grouping] = value
 
-        # send VEH message
-        # resp = retry_command(method=self.board.set_veh_flash, args=[args], response_types=[b'VEH', b'ERR'])
-        resp = self.set_veh_flash(args)  # TODO - retry on error or wrong response type?
-        if not proper_response(resp, b'VEH'):
-            input()  # proper_response already shows error, just pause to see it.
+        write_success = self.retry_set_veh_flash(args)
+        # skip error check for now since it thinks response 1.000000 doesn't match value 1, etc. TODO - check as number?
+        # if not write_success:
+        #     print("Error setting Vehicle configs: try again or check connections")
+        #     print("enter to continue")
+        #     input()
 
     # change it to return a string that can be printed. on fail, return emtpy string.
     def read_all_veh_terminal_interface(self):
-        # resp = retry_command(method=board.get_veh_flash, args=[[]], response_types=[b'VEH', b'ERR'])
-        resp = self.get_veh_flash([])  # TODO - try retry_get_veh_flash_all() instead?
-        if resp.msgtype == b'VEH':  # read success -> print the configs
+        veh_configs = self.retry_get_veh_flash_all()
+        if veh_configs:  # read success -> print the configs
             # if proper_response(resp, b'VEH'):
             out_str = "\nVehicle Configurations:"
 
@@ -922,31 +920,15 @@ class IMUBoard:
                     line = "\n    " + name + ": "
                     for axis, code in VEH_FIELDS[name]:
                         val_or_blank = "------"
-                        if code in resp.configurations:
-                            val_or_blank = axis + ": " + resp.configurations[code].decode()
+                        if code in veh_configs:
+                            val_or_blank = axis + ": " + veh_configs[code].decode()
                         line += val_or_blank + "    "
                     out_str += line
 
                 # single config: show it only if in the response.
-                elif type(grouping) is str and grouping in resp.configurations:
-                    line = "\n    " + name + ": " + resp.configurations[grouping].decode()
+                elif type(grouping) is str and grouping in veh_configs:
+                    line = "\n    " + name + ": " + veh_configs[grouping].decode()
                     out_str += line
             return out_str
         else:
             return ""  # indicates fail
-
-
-def proper_response(message, expected_types):
-    if not message:
-        return False
-    if not message.valid:  # actual problem with the message format or checksum fail, don't expect this
-        print("\nMessage parsing error: " + message.error)
-        return False
-    elif message.msgtype in expected_types:
-        return True
-    elif message.msgtype == b'ERR':  # Error message, like if you sent a bad request
-        print("\nError: " + ERROR_CODES[message.err])
-        return False
-    else:
-        print('\nUnexpected response type: ' + message.msgtype.decode())
-        return False
