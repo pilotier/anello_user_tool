@@ -1,3 +1,4 @@
+from math import sqrt
 import os
 from contextlib import redirect_stdout
 #suppress prints during import. on Mac, "import PySimpleGUI" causes print which messes up cutie menu.
@@ -419,10 +420,35 @@ class UserProgram:
             show_and_pause("Must connect before configuring")
             return
         clear_screen()
-        veh_read_str = self.board.read_all_veh_terminal_interface()
+
+        veh_configs = self.board.retry_get_veh_flash_all()
+        veh_read_str = self.board.read_all_veh_terminal_interface(veh_configs)
+
         if veh_read_str:  # show configs automatically
             print(veh_read_str)
-            #check connection again since error can be caught in read_all_configs
+            try:
+                # check for baseline errors, show warning if too different.
+                baseline_config = float(veh_configs['bsl'])
+                g1x = float(veh_configs['g1x'])
+                g1y = float(veh_configs['g1y'])
+                g1z = float(veh_configs['g1z'])
+                g2x = float(veh_configs['g2x'])
+                g2y = float(veh_configs['g2y'])
+                g2z = float(veh_configs['g2z'])
+                calculated_baseline = sqrt(pow(g2x - g1x, 2) + pow(g2y - g1y, 2) + pow(g2z - g1z, 2))
+
+                # check absolute difference - or should it be fractional difference?
+                if abs(baseline_config - calculated_baseline) > BASELINE_TOLERANCE_FOR_WARNING:
+                    print(f"\nWarning: Antenna baseline is {baseline_config:.4f} ,"
+                          f" but should be {calculated_baseline:.4f} based on antenna lever arms.")
+                    print(f"Please check if your antenna lever arms are accurate.\n")
+
+            except KeyError:
+                pass # old firmware won't have these configs -> just skip the check
+            except ValueError:
+                pass # bad read might not convert to float -> just skip?
+
+            # check connection again since error can be caught in read_all_configs
             if not self.con_on.value:
                 return
             #print("configure:")

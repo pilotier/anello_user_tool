@@ -907,11 +907,14 @@ class IMUBoard:
             input()
 
     # change it to return a string that can be printed. on fail, return emtpy string.
-    def read_all_veh_terminal_interface(self):
-        veh_configs = self.retry_get_veh_flash_all()
+    def read_all_veh_terminal_interface(self, veh_configs=None):
+        # get configs by default, or allow passing them.
+        if veh_configs is None:
+            veh_configs = self.retry_get_veh_flash_all()
+
         if veh_configs:  # read success -> print the configs
             # if proper_response(resp, b'VEH'):
-            out_str = "\nVehicle Configurations:"
+            out_str = "\nVehicle Configurations:  (all vectors in meters)"
 
             for name, grouping in VEH_FIELDS.items():
 
