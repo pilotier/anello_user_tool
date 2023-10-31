@@ -147,7 +147,7 @@ VEH_FIELDS = {
     "Wheel radius  ": "rad",
 }
 
-BASELINE_TOLERANCE_FOR_WARNING = (3.0 / 100.0)  # allow 3cm before warning
+BASELINE_TOLERANCE_FOR_WARNING = 0.1  # allow 10 cm before warning
 
 #UDP constants
 #A1_port1 = UDP_LOCAL_DATA_PORT

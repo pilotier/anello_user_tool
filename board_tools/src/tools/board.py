@@ -867,12 +867,30 @@ class IMUBoard:
         self.setup_data_port()
 
     # to set vehicle configs in terminal with cutie. put here to share with user_program.py and config.py
-    def set_veh_terminal_interface(self):
-        print("\nselect configurations to write\n")
+    def set_veh_terminal_interface(self, allowed_configs=None):
 
-        # choose which vehicle config to set
-        # TODO - only give options which show in a read? prevent setting antenna baseline?
-        options = list(VEH_FIELDS.keys()) + ["cancel"]
+        # only allow writing the configs it can read
+        # by default, read from vehicle configs here. or can take allowed configs as an argument
+        if allowed_configs is None:
+            read_configs = self.retry_get_veh_flash_all()
+            allowed_configs = list(read_configs.keys())
+
+        # choose which vehicle config to set, only give options from allowed_configs
+        allow_veh_fields = VEH_FIELDS.copy()
+        for name, code_or_tuple in VEH_FIELDS.items():
+            if type(code_or_tuple) is tuple:
+                # xyz groupings: check for the first code, since it should have all or none
+                expect_code = code_or_tuple[0][1]
+            else:
+                # single config: allow it if it's in allowed_configs
+                expect_code = code_or_tuple
+
+            if expect_code not in allowed_configs:
+                del(allow_veh_fields[name])
+
+        options = list(allow_veh_fields.keys()) + ["cancel"]
+
+        print("\nselect configurations to write\n")
         chosen = options[cutie.select(options)]
         if chosen == "cancel":
             return
@@ -921,14 +939,18 @@ class IMUBoard:
                 # tuple means multi-part like x/y/z: show all in one line, blank any missing
                 if type(grouping) is tuple:
                     line = "\n    " + name + ": "
-                    for axis, code in VEH_FIELDS[name]:
-                        named_value = "------"  # show blank if not found
+                    has_any_axis = False
+                    for axis, code in grouping:
+                        named_value = "--------"  # show blank if not found
                         if code in veh_configs:
                             raw_val = veh_configs[code].decode()
                             # show the name if there is one
                             named_value = VEH_VALUE_NAMES.get((code, raw_val), raw_val)
+                            has_any_axis = True
                         line += axis + ": " + named_value + "    "
-                    out_str += line
+                    # show the x,y,z grouping only if at least one was in the read.
+                    if has_any_axis:
+                        out_str += line
 
                 # single config: show it only if in the response.
                 elif type(grouping) is str and grouping in veh_configs:

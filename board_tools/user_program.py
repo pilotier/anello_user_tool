@@ -439,8 +439,8 @@ class UserProgram:
 
                 # check absolute difference - or should it be fractional difference?
                 if abs(baseline_config - calculated_baseline) > BASELINE_TOLERANCE_FOR_WARNING:
-                    print(f"\nWarning: Antenna baseline is {baseline_config:.4f} ,"
-                          f" but should be {calculated_baseline:.4f} based on antenna lever arms.")
+                    print(f"\nWarning: Antenna baseline is {baseline_config:.4f} meters,"
+                          f" but should be {calculated_baseline:.4f} meters based on antenna lever arms.")
                     print(f"Please check if your antenna lever arms are accurate.\n")
 
             except KeyError:
@@ -455,7 +455,8 @@ class UserProgram:
             actions = ["Edit", "Done"]
             selected_action = actions[cutie.select(actions)]
             if selected_action == "Edit":
-                self.board.set_veh_terminal_interface()
+                allowed_configs = list(veh_configs.keys())
+                self.board.set_veh_terminal_interface(allowed_configs)
                 self.vehicle_configure()  # recursion to view/edit again until picking "done".
             else:
                 return
