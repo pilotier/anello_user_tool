@@ -457,9 +457,6 @@ class UserProgram:
             if selected_action == "Edit":
                 allowed_configs = list(veh_configs.keys())
                 self.board.set_veh_terminal_interface(allowed_configs)
-                # short wait so that heading calibration from baseline completes before next settings read
-                # TODO - do repeated read until it finishes? but baseline calibration from GPS data will take longer.
-                time.sleep(0.2)
                 self.vehicle_configure()  # recursion to view/edit again until picking "done".
             else:
                 return
