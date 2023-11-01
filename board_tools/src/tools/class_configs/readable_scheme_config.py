@@ -360,7 +360,7 @@ VEH_VALUE_NAMES = {
     ("bcal", "1"): "Auto calibrate",
     ("bcal", "2"): "From lever arms",
     ("bcal", "99"): "Reset",
-    ("bcal", "0"): "None",
+    ("bcal", "0"): "Complete",
 }
 
 ERROR_CODES = {

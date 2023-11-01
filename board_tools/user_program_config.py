@@ -148,6 +148,7 @@ VEH_FIELDS = {
 }
 
 BASELINE_TOLERANCE_FOR_WARNING = 0.1  # allow 10 cm before warning
+BCAL_LEVER_ARM_WAIT_SECONDS = 3
 
 #UDP constants
 #A1_port1 = UDP_LOCAL_DATA_PORT

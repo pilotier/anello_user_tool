@@ -956,6 +956,11 @@ class IMUBoard:
                 elif type(grouping) is str and grouping in veh_configs:
                     raw_val = veh_configs[grouping].decode()
                     named_value = VEH_VALUE_NAMES.get((grouping, raw_val), raw_val)
+
+                    # clearer explanation for baseline calibration status.
+                    if grouping == "bcal" and raw_val != "0":
+                        named_value = f"In Progress ({named_value})"
+
                     line = "\n    " + name + ": " + named_value
                     out_str += line
             return out_str

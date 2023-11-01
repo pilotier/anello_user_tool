@@ -414,6 +414,34 @@ class UserProgram:
             show_and_pause(f"Error reading unit configs. Try again or check cables.\n")
             return False
 
+    # wait a few seconds for baseline calibration to finish, return the vehicle configs after.
+    def wait_for_baseline_calibration(self, veh_configs=None):
+        if veh_configs is None:
+            veh_configs = self.board.retry_get_veh_flash_all()
+
+        # handle if baseline calibration is still going: show a message and retry every
+        if 'bcal' in veh_configs:
+            current_bcal = veh_configs['bcal']
+            # bcal 2: from lever arms, should finish quickly. 1: auto calibrate, could take a few minutes
+            # TODO make a longer, non-blocking version for auto calibrate?
+
+            if current_bcal in [b"2"]:  #[b"2", b"1"]:
+                print("\nDoing baseline calibration: ", end="")
+                start_time = time.time()
+                # loop until baseline calibration done, or time limit
+                while (time.time() - start_time) < BCAL_LEVER_ARM_WAIT_SECONDS:
+                    print("|", end="", flush=True)  # progress indicator
+                    time.sleep(0.2)
+                    veh_configs = self.board.retry_get_veh_flash_all()
+                    if 'bcal' in veh_configs:
+                        current_bcal = veh_configs['bcal']
+                    if current_bcal == b'0':  # baseline calibration finished
+                        print("\nBaseline calibration finished")
+                        break
+                if current_bcal != b'0':
+                    print("\nStill doing baseline calibration, check again in a few minutes\n")
+        return veh_configs
+
     # Vehicle Configs: same pattern as user configs
     def vehicle_configure(self):
         if not self.board:
@@ -422,6 +450,7 @@ class UserProgram:
         clear_screen()
 
         veh_configs = self.board.retry_get_veh_flash_all()
+        veh_configs = self.wait_for_baseline_calibration(veh_configs)
         veh_read_str = self.board.read_all_veh_terminal_interface(veh_configs)
 
         if veh_read_str:  # show configs automatically
@@ -451,7 +480,6 @@ class UserProgram:
             # check connection again since error can be caught in read_all_configs
             if not self.con_on.value:
                 return
-            #print("configure:")
             actions = ["Edit", "Done"]
             selected_action = actions[cutie.select(actions)]
             if selected_action == "Edit":
