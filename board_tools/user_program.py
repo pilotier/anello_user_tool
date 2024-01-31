@@ -403,11 +403,14 @@ class UserProgram:
             print("\nselect " + name)
             value_options = CFG_VALUE_OPTIONS[code].copy()
 
-            # don't allow message format = binary if any sensor ranges are 0.
+            # don't allow message format = binary if any sensor ranges are 0, or version below 1.2
             if code == "mfm":
                 self.board.retry_unlock_flash()
                 ranges = self.board.retry_get_sensor(["rr1", "rr2", "rr3", "ra1", "ra2", "ra3"])
                 if ((ranges is None) or (b'0' in ranges)) and "0" in value_options:
+                    value_options.remove("0")
+
+                if (not version_greater_or_equal(self.version, "1.2.0")) and "0" in value_options:
                     value_options.remove("0")
 
             value_option_names = [CFG_VALUE_NAMES.get((code, opt), opt) for opt in value_options]  # cfg and vale code -> value name
@@ -435,17 +438,21 @@ class UserProgram:
         if not proper_response(resp, b'CFG'):
             show_and_pause("") # proper_response already shows error, just pause to see it.
 
-
-    # read all configurations.
+    # read and show all user configurations
     def read_all_configs(self, board):
         resp = self.retry_command(method=board.get_cfg_flash, args=[[]], response_types=[b'CFG'])
         if proper_response(resp, b'CFG'):
-            self.available_configs = list(resp.configurations.keys())
+            configs_dict = resp.configurations
+            # hide alignment config below 1.2.0
+            if 'aln' in configs_dict and not version_greater_or_equal(self.version, "1.2.0"):
+                del(configs_dict['aln'])
+
+            self.available_configs = list(configs_dict.keys())
             print("Unit Configurations:")
-            for cfg_field_code in resp.configurations:
+            for cfg_field_code in configs_dict:
                 if cfg_field_code in CFG_CODES_TO_NAMES:
                     full_name = CFG_CODES_TO_NAMES[cfg_field_code]
-                    value_code = resp.configurations[cfg_field_code].decode()
+                    value_code = configs_dict[cfg_field_code].decode()
                     value_name = CFG_VALUE_NAMES.get((cfg_field_code, value_code), value_code)
                     print("\t" + full_name + ":\t" + value_name)
             return True
@@ -1610,6 +1617,14 @@ def try_set_expand(gui_object, x=True, y=True):
 
 
 def version_greater_or_equal(our_ver, compareto):
+
+    # chop any letters from front of our_ver, so we can compare by number
+    for i in range(len(our_ver)):
+        if our_ver[0].isalpha():
+            our_ver = our_ver[1:]
+        else:
+            break
+
     try:
         our_nums = [int(c) for c in our_ver.split(".")]
         other_nums = [int(c) for c in compareto.split(".")]
