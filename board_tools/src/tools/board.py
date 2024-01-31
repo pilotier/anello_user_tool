@@ -976,7 +976,10 @@ class IMUBoard:
                 expect_code = code_or_tuple
 
             if expect_code not in allowed_configs:
-                del(allow_veh_fields[name])
+                try:
+                    del(allow_veh_fields[name])
+                except KeyError:
+                    pass
 
         options = list(allow_veh_fields.keys())
         if ("bsl" in allowed_configs) and ("bcal" in allowed_configs):
