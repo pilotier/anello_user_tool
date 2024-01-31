@@ -1,3 +1,4 @@
+import sys
 import os
 import cutie
 import json
@@ -6,15 +7,23 @@ import os
 import re
 import serial.tools.list_ports as list_ports
 import time
+from pathlib import Path
+
+
+ABS_PATH = Path(__file__)
+sys.path.append(str(ABS_PATH.parent.parent.parent.parent))
+
 try:  # importing from inside the package
     from readable_scheme import *
     from rtcm_scheme import *
+    from binary_scheme import *
     from message_scheme import Message
     from connection import *
     from class_configs.board_config import *
 except ModuleNotFoundError:  # importing from outside the package
     from tools.readable_scheme import *
     from tools.rtcm_scheme import *
+    from tools.binary_scheme import *
     from tools.message_scheme import Message
     from tools.connection import *
     from tools.class_configs.board_config import *
@@ -26,6 +35,7 @@ COMMANDS_RETRY = 5 #retry limit for commands. mostly matters for USB with lower 
 def debug_print(text):
     if debug:
         print(text)
+
 
 # abstraction of the board and its inputs and outputs
 class IMUBoard:
@@ -65,8 +75,11 @@ class IMUBoard:
             # file not exist, or connecting based on file fails -> detect the settings, then save in a file
             #print("connection from cache failed -> do auto search")
             board.release_connections()
-            if board.auto_no_cache(set_data_port): #None on fail
+            if board.auto_no_cache(set_data_port): # None on fail
                 board.write_connection_settings(set_data_port) #also counts as success -> save.
+            else:
+                board.release_connections()
+                return None
         return board
 
     #initialize on udp. TODO - could put cache options here too.
@@ -165,6 +178,7 @@ class IMUBoard:
             self.baud = baud
         else:
             self.release_connections()
+        self.connect_success = success
         return success
 
     def connect_data_port(self, data_port, baud=DEFAULT_BAUD):
@@ -198,6 +212,9 @@ class IMUBoard:
             self.data_scheme = ReadableScheme()
         elif self.msg_format == b'4':
             self.data_scheme = RTCM_Scheme()
+        elif self.msg_format == b'0':
+            self.data_scheme = Binary_Scheme()
+
     #check data port is right: should output CAL/IMU/IM1 message types
     #possible issues:
     # 1. if odr 0, no message -> have to set nonzero. also uart on if off.
@@ -256,9 +273,16 @@ class IMUBoard:
         if hasattr(self, "odometer_connection") and self.odometer_connection:
             self.odometer_connection.close()
 
+    # connect again on serial after disconnecting. TOD0 - make a version for ethernet too?
+    def reconnect_serial(self):
+        #self.connect_to_ports(data_port=self.data_port_name, control_port=self.control_port_name)
+        self.__init__(self.data_port_name, self.control_port_name, self.baud, self.data_scheme, self.control_scheme)
+
+    # disconnect and reconnect serial. TODO - does this work for ethernet?
     def reset_connections(self):
         self.release_connections()
-        self.__init__(self.data_port_name, self.control_port_name, self.baud, self.data_scheme, self.control_scheme)
+        self.reconnect_serial()
+        #self.__init__(self.data_port_name, self.control_port_name, self.baud, self.data_scheme, self.control_scheme)
 
     def list_ports(self):
         return sorted([p.device for p in list_ports.comports()])
@@ -307,7 +331,7 @@ class IMUBoard:
                 else:
                     self.release_connections()
             except Exception as e:
-                #print("skipping over port " + control_port + " with error: " + str(e))
+                debug_print("skipping over port " + control_port + " with error: " + str(e))
                 self.release_connections()
                 continue
         # no ports worked - clean up and report fail
@@ -331,6 +355,7 @@ class IMUBoard:
 
     def find_data_port_gnss_imu(self):
         all_ports = self.list_ports()
+        debug_print(f"find_data_port_gnss_imu: possible data ports are {all_ports}")
         dataPortNum = None #is this needed?
 
         # #check the message format here? but check_data_port does it anyway.
@@ -343,7 +368,9 @@ class IMUBoard:
         for possible_data_port in all_ports:
             debug_print(f"looking for data port at {possible_data_port}, data scheme is {self.data_scheme}")
             if self.connect_data_port(possible_data_port, self.baud): #230400):  #TODO: 2300400 baud for GNSS - or should it use self.baud?
+                debug_print(f"connected at {possible_data_port}")
                 if self.check_data_port():
+                    debug_print(f"check success at {possible_data_port}")
                     dataPortNum = possible_data_port
                     break #avoids the release_data_port
             self.release_data_port()  # wrong data port -> release it
@@ -373,13 +400,13 @@ class IMUBoard:
         self.control_connection.readall()
         self.data_connection.readall()
 
-    def connect_manually(self, set_data_port=False):
+    def connect_manually(self, set_data_port=False, set_config_port=True):
         # get the port numbers
         # stream = os.popen("python -m serial.tools.list_ports")
         # port_names = [line.strip() for line in stream.readlines()]
         port_names = self.list_ports()
         if not port_names:
-            print("no ports found.")
+            show_and_pause("no ports found.")
             return None
         port_names.append("cancel")
         data_con = DummyConnection()
@@ -396,8 +423,14 @@ class IMUBoard:
                     if data_port == "cancel":
                         data_con.close() #disconnect in case it's needed
                         serial_con.close()
-                        return
-                    data_con = SerialConnection(data_port, DEFAULT_BAUD, timeout=TIMEOUT_REGULAR)
+                        return None
+                    if not set_config_port:
+                        valid_baud_rates = [115200, 230400, 921600]
+                        print("\nselect baud rate")
+                        baud = valid_baud_rates[cutie.select(valid_baud_rates, selected_index=0)]
+                        data_con = SerialConnection(data_port, baud, timeout=TIMEOUT_REGULAR)
+                    else:
+                        data_con = SerialConnection(data_port, DEFAULT_BAUD, timeout=TIMEOUT_REGULAR)
                 except serial.serialutil.SerialException:
                     print("\nerror connecting to " + data_port + " - wrong port number or port is busy")
                     continue
@@ -406,6 +439,17 @@ class IMUBoard:
         else:
             data_port = None
             data_con = DummyConnection()
+
+        if not set_config_port:
+            config_con = DummyConnection()
+
+            self.data_connection = data_con
+            self.data_port_name = data_port
+            self.control_connection = config_con
+            self.control_port_name = "None"
+            self.baud = baud
+            return None, data_port, baud
+
 
         # connect to control port - need this to configure the board
         connected = False
@@ -459,7 +503,8 @@ class IMUBoard:
     # send a message on the control channel
     # we expect a response for each control message, so show an error if there is none.
     def send_control_message(self, message):
-        self.control_connection.readall() #read everything to clear any old responses
+        for i in range(3):
+            data = self.control_connection.readall() #read everything to clear any old responses
         self.control_scheme.write_one_message(message, self.control_connection)
         time.sleep(1e-1) #wait for response, seems to need it if UDPConnection has timeout 0.
         resp = self.read_one_control_message()
@@ -476,7 +521,16 @@ class IMUBoard:
 
     # read control message - for example response after we send a control message
     def read_one_control_message(self):
-        return self.control_scheme.read_one_message(self.control_connection)
+        # return self.control_scheme.read_one_message(self.control_connection) #old version
+
+        for i in range(100):  # give up after too many tries - TODO what should limit be?
+            resp = self.control_scheme.read_one_message(self.control_connection)
+            if not resp: # timeout , return None
+                return None
+            # skip any output types, for firmware versions that output on both ports
+            if hasattr(resp, "msgtype") and resp.msgtype in [b'CAL', b'IMU', b'IM1', b'INS', b'GPS', b'GP2', b'HDG']:
+                continue
+            return resp
 
     # methods to build and send messages by type
     # These all return a message object for the response.
@@ -530,6 +584,14 @@ class IMUBoard:
         m = Message({'msgtype': b'VEH', 'mode': READ_FLASH, 'configurations': names_list})
         return self.send_control_message(m)
 
+    def get_sensor(self, names_list):
+        m = Message({'msgtype': b'SEN', 'mode': READ_FLASH, 'configurations': names_list})
+        return self.send_control_message(m)
+
+    def unlock_flash(self):
+        m = Message({'msgtype': b'UNL', 'password': UNLOCK_FLASH_CODE})
+        return self.send_control_message(m)
+
     def get_status(self):
         m = Message({'msgtype': b'STA'})
         return self.send_control_message(m)
@@ -560,6 +622,10 @@ class IMUBoard:
             self.control_scheme.write_one_message(m, self.odometer_connection)
         else:
             self.send_control_no_wait(m)
+
+    def send_initial_heading(self, heading):
+        m = Message({'msgtype': b'INI', 'mode':INI_HEADING, 'value': heading})
+        self.send_control_message(m)
 
     # enable odometer config in ram or flash - need this for test setup since odo=off can't set to other values
     def enable_odo_ram(self):
@@ -659,6 +725,64 @@ class IMUBoard:
         debug_print(f"retry limit: could not set attributes {configs_dict}") #make this debug_print too?
         return False  # did not find it within retry limit
 
+    # setter for multiple config types, does one value at a time with retries.
+    # will use this for float types like SEN which need match with tolerance. use in other methods too?
+    def set_configs(self, method, expect_response_type, configs_dict):
+        all_success = []
+        for k, v in configs_dict.items():
+            success = False
+            for i in range(COMMANDS_RETRY):
+                try:
+                    time.sleep(0.1)
+                    if type(v) is str:
+                        v_encoded = v.encode()
+                    elif type(v) in [int, float]:
+                        v_encoded = str(v).encode()
+                    elif type(v) is bytes:
+                        v_encoded = v
+                    else:
+                        debug_print(f"unexpected type {type(v)} for attribute {k}")
+                        return False
+
+                    resp = method({k: v_encoded})
+
+                    if not resp:
+                        debug_print(f"{method.__name__}: {k}: {v} resp failed check (no response), retrying")
+                    elif not resp.valid:
+                        debug_print(f"{method.__name__}: {k}: {v} resp failed check (invalid, type {resp.msgtype}, error {resp.err if hasattr(resp, 'err') else resp.error}), retrying")
+                    elif resp.msgtype != expect_response_type:
+                        debug_print(f"{method.__name__}: {k}: {v} resp failed check (wrong type, type {resp.msgtype}, error {resp.err if hasattr(resp, 'err') else resp.error}), retrying")
+                    elif not hasattr(resp, "configurations"):
+                        debug_print(f"{method.__name__}: {k}: {v} resp failed check (no configurations, type {resp.msgtype}, error {resp.err if hasattr(resp, 'err') else resp.error}), retrying")
+                    elif k not in resp.configurations:
+                        debug_print(f"{method.__name__}: {k}: {v} resp configurations missing {k} retrying.\nresponse:{resp.configurations}")
+                    else:
+                        ret_val = resp.configurations[k] # bytes type
+
+                        #float: match with tolerance.
+                        if type(v) is float:
+                            ret_val = float(ret_val.decode())
+                            if v == 0.0 and ret_val == 0.0:
+                                success = True
+                                break
+                            elif abs((ret_val - v) / v) < 0.01: #expect 1/1000 match.
+                                success = True
+                                break
+                            else:
+                                debug_print(f"setter response value (float) does not match: {v} vs {ret_val}")
+                        # any other types: compare equality as bytes
+                        elif v_encoded == ret_val:
+                            success = True
+                            break
+                        else:
+                            debug_print(f"setter response value (non-float) does not match: {v} vs {ret_val}")
+                except Exception as e:
+                    debug_print(f"error setting {expect_response_type}, retrying: {e}")
+            all_success.append(success)
+            if not success:
+                debug_print(f"retry limit: could not set attribute {k}")  # make this debug_print too?
+        return all(all_success)
+
     # methods to retry the specific commands by using the retry functions on that function
     # these return the getter info instead of a message object, so simpler to use in other code.
     # don't use for "no response" types since it won't know to retry -> just use the original method.
@@ -698,6 +822,9 @@ class IMUBoard:
     def retry_get_veh_flash(self, names_list, as_dict=False):
         return self.retry_get_info_keywords(self.get_veh_flash, b'VEH', names_list, return_dict=as_dict)
 
+    def retry_get_sensor(self, names_list, as_dict=False):
+        return self.retry_get_info_keywords(self.get_sensor, b'SEN', names_list, return_dict=as_dict)
+
     # TODO - make a wrapper for single arg that unwraps it? like:  odr = retry_get_flash("odr") ?
     #ex: def_retry_get_cfg(self, single_name): return self.retry_get_cfg([single_name])[0]
 
@@ -720,6 +847,13 @@ class IMUBoard:
 
     def retry_set_veh_flash(self, configurations):
         return self.retry_set_keywords(self.set_veh_flash, b'VEH', configurations)
+
+    #lock/unlock flash: use getter method since it responds with "Locked" or "Unlocked". Returns True if success.
+    def retry_lock_flash(self):
+        return self.retry_get_info(self.lock_flash, b"UNL", "locked") == b'Locked' #return True/False
+
+    def retry_unlock_flash(self):
+        return self.retry_get_info(self.unlock_flash, b"UNL", "locked") == b'Unlocked' #return True/False
 
     #def retry_ping(self):  - should it have this?
     #def retry_echo(self, contents): - should it have this?
@@ -766,105 +900,56 @@ class IMUBoard:
             time.sleep(wait_time)
 
     # bootloader function taking hex file path and expected version after
-    def bootload_with_file_path(self, hex_file_path, expected_version_after, num_attempts=3):
-        #check OS. os.name = 'nt' for windows, 'posix' for Linux and Mac.
+    def bootload_with_file_path(self, hex_file_path, expected_version_after="unknown", num_attempts=1):
+        # check OS. os.name = 'nt' for windows, 'posix' for Linux and Mac.
         if os.name != 'nt':
             print("bootloader currently works on Windows only, canceling.")
             return
 
-        current_version = self.retry_get_version().decode()
-        print(f"\nUpdating from current version {current_version} to {expected_version_after}")
+        # use bootloader v2 for IMU+ only, v1 for IMU and others.
+        bootloader_v1_name = "HtxAurixBootLoader.exe"
+        bootloader_v2_name = "HtxAurixBootLoader_v2.0.0.exe"
 
-        # if expected_version_after == current_version:
-        #     print(f"already on version: {expected_version_after}: skipping.") #TODO - give option to do it anyway?
-        #     return
-
-        print("\nKeep plugged in until upgrade finishes. If errors show, hit enter to retry.")
-
-        attempt = 1
-        while True:
-            self.enter_bootloading()
-            self.release_connections()
-            #send bootloader commands. TODO - should it use subprocess.call() instead of os.system()?
-            os.system(".\HtxAurixBootLoader.exe START TC36X 6 {} 115200 0 0 0 0".format(self.data_port_name[3:]))
-            #note - [3:] will work for windows "COM" port numbers, not on other os. But this bootloader is windows only.
-            os.system(".\HtxAurixBootLoader.exe PROGRAMVERIFY \"{}\" 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000 0x0".format(
-                hex_file_path))
-            os.system(".\HtxAurixBootLoader.exe END")
-
-            #connect again after disconnect (this is specific to serial connection). TODO - handle errors here?
-            self.reconnect_serial()
-            #self.connect_to_ports(data_port=self.data_port_name, control_port=self.control_port_name)
-
-            # Check SW Version
-            if expected_version_after == "unknown":
-                break #means we don't check the version after, assume success.
-            if expected_version_after == self.retry_get_version().decode(): #TODO handle None response -> decode will fail
-                break
-            else:
-                if attempt > num_attempts:
-                    assert False, f"Failed to Upgrade System after {num_attempts} attempts"
-            attempt += 1
-
-    def get_all_cfg(self):
-        self.unlock_flash()
-        unit_dict = {}
-        unit_dict["User Configuration"] = convert_cfg_code_to_field(
-            convert_dict_values_to_str(
-                self.retry_get_cfg_flash_all()
-            )
-        )
-        unit_dict["Factory Configuration"] = convert_factory_code_to_field(
-            convert_dict_values_to_str(
-                self.retry_read_flash_all()
-            )
-        )
-        unit_dict["Vehicle Configuration"] = convert_dict_values_to_str(
-            self.retry_get_veh_flash_all()
-        )
-        unit_dict["Sensor Configuration"] = convert_sensor_code_to_field(
-            convert_dict_values_to_str(
-                self.retry_get_sensor_all()
-            )
-        )
-        unit_dict["Software Version"] = self.retry_get_version().decode()
-        return unit_dict
-
-    def set_all_cfg(self, cfg):
-        if "User Configuration" in cfg.keys():
-            for user_config in cfg["User Configuration"].items():
-                self.retry_set_cfg_flash(
-                    convert_cfg_field_to_code(
-                        convert_dict_values_to_bin({user_config[0]: user_config[1]})
-                    )
-                )
-
-        if "Factory Configuration" in cfg.keys():
-            self.retry_write_flash(
-                convert_factory_field_to_code(
-                    convert_dict_values_to_bin(cfg["Factory Configuration"])
-                )
-            )
-
-        if "Vehicle Configuration" in cfg.keys():
-            for user_config in cfg["Vehicle Configuration"].items():
-                self.retry_set_veh_flash(
-                    convert_dict_values_to_bin({user_config[0]: user_config[1]})
-                )
-
-        if "Sensor Configuration" in cfg.keys():
-            for user_config in cfg["Sensor Configuration"].items():
-                self.retry_set_sensor(
-                    convert_sensor_field_to_code(
-                        convert_dict_values_to_bin({user_config[0]: user_config[1]})
-                    )
-                )
         try:
-            baud_after = cfg["User Configuration"]["Baud"]
-        except KeyError:
-            baud_after = None #None means baud does not change.
-        self.reset_with_waits(new_baud=baud_after)
-        self.setup_data_port()
+            prod_id = self.retry_get_pid().decode()
+        except Exception as e:
+            print("could not read product id -> canceled bootloading")
+            return
+
+        # TODO - just check for "IMU" in product id, or check entire product id vs a list of known ones?
+        if "IMU+" in prod_id :
+            bootloader_name = bootloader_v2_name
+        elif "IMU" in prod_id:
+            bootloader_name = bootloader_v1_name
+        else:
+            bootloader_name = bootloader_v1_name
+
+        print(f"\nUsing {bootloader_name} for '{prod_id}' product type.")
+
+        print("\nKeep plugged in until upgrade finishes.")
+        print("If bootload fails: cycle power, then connect user_program again to check firmware version.")
+
+        self.enter_bootloading()
+        self.release_connections()
+        # send bootloader commands. TODO - should it use subprocess.call() instead of os.system()?
+        os.system(f".\{bootloader_name} START TC36X 6 {self.data_port_name[3:]} 115200 0 0 0 0")
+        # note - [3:] will work for windows "COM" port numbers, not on other os. But this bootloader is windows only.
+        os.system(f".\{bootloader_name} PROGRAMVERIFY \"{hex_file_path}\" 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000 0x0")
+        os.system(f".\{bootloader_name} END")
+
+        # connect again after disconnect (this is specific to serial connection). TODO - handle errors here?
+        time.sleep(1)  # pause to let it restart.
+        self.reconnect_serial()
+
+        # Check SW Version
+        version_after_resp = self.retry_get_version()
+        version_after_resp_string = version_after_resp.decode() if version_after_resp else "None"
+
+        if (version_after_resp_string == expected_version_after) or (expected_version_after == "unknown"):
+            print(f"\nsuccessfully updated to version {version_after_resp_string}")
+        else:
+            print(f"\nversion afterward {version_after_resp_string} did not match expected {expected_version_after}")
+            print("check version and retry update if needed")
 
     # to set vehicle configs in terminal with cutie. put here to share with user_program.py and config.py
     def set_veh_terminal_interface(self, allowed_configs=None):
@@ -878,6 +963,11 @@ class IMUBoard:
         # choose which vehicle config to set, only give options from allowed_configs
         allow_veh_fields = VEH_FIELDS.copy()
         for name, code_or_tuple in VEH_FIELDS.items():
+            if code_or_tuple in ["bsl", "bcal"]:
+                try:
+                    del(allow_veh_fields[name])  # skip these, will handle separately
+                except KeyError:
+                    pass
             if type(code_or_tuple) is tuple:
                 # xyz groupings: check for the first code, since it should have all or none
                 expect_code = code_or_tuple[0][1]
@@ -888,7 +978,10 @@ class IMUBoard:
             if expect_code not in allowed_configs:
                 del(allow_veh_fields[name])
 
-        options = list(allow_veh_fields.keys()) + ["cancel"]
+        options = list(allow_veh_fields.keys())
+        if ("bsl" in allowed_configs) and ("bcal" in allowed_configs):
+            options += ["Antenna Baseline"]  # one combined name for both
+        options += ["cancel"]
 
         print("\nselect configurations to write\n")
         chosen = options[cutie.select(options)]
@@ -896,12 +989,32 @@ class IMUBoard:
             return
 
         # enter the components of the chosen config
-        print(f"\nenter {chosen}:")
+        print(f"\nEnter {chosen}:")
         args = {}  # dict of VEH to write
         grouping = VEH_FIELDS[chosen]
 
+        # combined menu for bsl and bcal
+        if grouping == "bsl":
+            manually_text = "Enter manually"
+            auto_text = "Auto calibrate (requires open sky view)"
+            lever_arm_text = "Calculate from lever arms (must be accurate to 1 cm)"
+            cancel_text = "cancel"
+            baseline_options = [manually_text, auto_text, lever_arm_text, cancel_text]
+            bsl_chosen = baseline_options[cutie.select(baseline_options)]
+            if bsl_chosen == cancel_text:
+                return
+            elif bsl_chosen == manually_text:
+                self.retry_set_veh_flash({"bcal": b'99'})  # cancel any calibration in progress first
+                enter_value = input("\nEnter antenna baseline in meters (must be accurate to 1 cm):\n")
+                args["bsl"] = enter_value.encode()
+            elif bsl_chosen == auto_text:
+                show_and_pause("\nEnsure you are in open skies and your antennae are fixed in their position.")
+                args["bcal"] = b'1'
+            elif bsl_chosen == lever_arm_text:
+                args["bcal"] = b'2'
+
         # grouping like x/y/z parts: ask for each of them
-        if type(grouping) is tuple:
+        elif type(grouping) is tuple:
             for axis, code in grouping:
                 value = input(axis + ": ").encode()
                 args[code] = value
@@ -912,7 +1025,11 @@ class IMUBoard:
                 # if there are options: pick from the options, showing as a name if there are names.
                 value_options = VEH_VALUE_OPTIONS[grouping]
                 name_options = [VEH_VALUE_NAMES.get((grouping, val), val) for val in value_options]
-                value = value_options[cutie.select(name_options)].encode()
+                name_options.append("cancel")
+                chosen_index = cutie.select(name_options)
+                if name_options[chosen_index] == "cancel":
+                    return
+                value = value_options[chosen_index].encode()
             else:
                 value = input(grouping + ": ").encode()
             args[grouping] = value
@@ -920,9 +1037,7 @@ class IMUBoard:
         write_success = self.retry_set_veh_flash(args)
         # skip error check for now since it thinks response 1.000000 doesn't match value 1, etc. TODO - check as number?
         if not write_success:
-            print("Error setting Vehicle configs: try again or check connections")
-            print("enter to continue")
-            input()
+            show_and_pause("Error setting Vehicle configs: try again or check connections")
 
     # change it to return a string that can be printed. on fail, return emtpy string.
     def read_all_veh_terminal_interface(self, veh_configs=None):
@@ -932,9 +1047,13 @@ class IMUBoard:
 
         if veh_configs:  # read success -> print the configs
             # if proper_response(resp, b'VEH'):
-            out_str = "\nVehicle Configurations:  (all vectors in meters)"
+            out_str = "\nVehicle Configurations:  (all vectors in meters with center of ANELLO unit as origin)"
 
             for name, grouping in VEH_FIELDS.items():
+
+                # don't show baseline calibration here, since we have separate print for calibration in progress.
+                if grouping == "bcal":
+                    continue
 
                 # tuple means multi-part like x/y/z: show all in one line, blank any missing
                 if type(grouping) is tuple:
@@ -947,7 +1066,7 @@ class IMUBoard:
                             # show the name if there is one
                             named_value = VEH_VALUE_NAMES.get((code, raw_val), raw_val)
                             has_any_axis = True
-                        line += axis + ": " + named_value + "    "
+                        line += f"{axis}: {truncate_decimal(named_value, 3)}    "
                     # show the x,y,z grouping only if at least one was in the read.
                     if has_any_axis:
                         out_str += line
@@ -961,7 +1080,7 @@ class IMUBoard:
                     if grouping == "bcal" and raw_val != "0":
                         named_value = f"In Progress ({named_value})"
 
-                    line = "\n    " + name + ": " + named_value
+                    line = f"\n    {name}: {truncate_decimal(named_value, 3)}"
                     out_str += line
             return out_str
         else:
@@ -995,3 +1114,18 @@ def configs_different(expected_configs, confirmed_configs):
     else:
         debug_print(f"\nAll configs wrote successfully")
     return differences
+
+
+def show_and_pause(text):
+    print(text)
+    print("enter to continue:")
+    input()
+
+
+def truncate_decimal(num_or_str, places):
+    try:
+        # try to format with that many places as long as it can be converted to float
+        return f"{float(num_or_str):.{places}f}"
+    except (ValueError, TypeError):
+        # if can't convert, just return the original thing (could be None, non-numerical string, etc)
+        return num_or_str

@@ -31,7 +31,8 @@ while True:
     try:
         code = "APODO"
         #speed = 12.3  #replace this by getting speed from your odometer
-        speed = uniform(0, 20) #random float in the range
+        #speed = uniform(0, 20) #random float in the range
+        speed = 0.001
         body = code+",+," + '%.2f' % speed
         checksum = compute_checksum(body.encode())
         msg = "#"+body+"*"+checksum+"\r\n"  #should be: #APODO,22.5*62\r\n

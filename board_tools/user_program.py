@@ -8,7 +8,7 @@ with open(os.devnull, "w") as f, redirect_stdout(f):
     import sys
     import pathlib
     import json
-    import subprocess
+    #import subprocess
     import serial
     from multiprocessing import Array, Value, Process, Manager
     import base64
@@ -31,6 +31,10 @@ with open(os.devnull, "w") as f, redirect_stdout(f):
     sys.path.append(parent_dir+'/src')
     from tools import *
 
+    import re
+    import traceback
+    from file_picking import pick_one_file, pick_multiple_files
+
 
 #interface for A1 configuration and logging
 class UserProgram:
@@ -41,12 +45,17 @@ class UserProgram:
                  log_on, log_start, log_stop, log_name,
                  ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
                  ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
-                 last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg):
+                 last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg,
+                 last_imu_time,
+                 shared_serial_number
+        ):
         self.connection_info = None
         self.board = None
         self.serialnum = ""
+        self.shared_serial_number = shared_serial_number
+        self.shared_serial_number.value = b""
         self.version = ""
-        self.pid = ""
+        self.product_id = ""
 
         #keep the shared vars as class attributes so other UserProgram methods have them.
         #set them like self.log_name.value = x so change is shared. not self.log_name = x
@@ -57,9 +66,11 @@ class UserProgram:
         self.ntrip_on, self.ntrip_start, self.ntrip_stop, self.ntrip_succeed = ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed
         self.ntrip_ip, self.ntrip_port, self.ntrip_gga, self.ntrip_req = ntrip_ip, ntrip_port, ntrip_gga, ntrip_req
         self.last_ins_msg, self.last_gps_msg, self.last_gp2_msg, self.last_imu_msg, self.last_hdg_msg = last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg
+        self.last_imu_time = last_imu_time
 
         #any features which might or not be there - do based on firmware version?
         self.available_configs = []
+        self.show_gps_info = False
 
         #self.map_cache = {} #cache for map tiles. or could use lru.LRU[max_items] to avoid overfilling
         #self.map_cache = LRU(MAX_CACHE_TILES) #TODO - calculate how many tiles we can store in memory
@@ -89,7 +100,7 @@ class UserProgram:
                     self.monitor()
                 elif action == "NTRIP":
                     self.ntrip_menu()
-                elif action == "Upgrade":
+                elif action == "Firmware Update":
                     self.upgrade()
                 elif action == "Plot":
                     self.plot()
@@ -125,6 +136,24 @@ class UserProgram:
         self.con_on.value = 0
         self.con_stop.value = 1
 
+    # stop operations and data port before bootloader, but still need config port to send enter_bootloading command.
+    def release_for_bootload(self):
+        self.stop_logging()
+        self.stop_ntrip()
+        #self.connection_info = None #probably don't set to None - this tracks udp/com and port numbers.
+        if self.board:
+            #close board's data and odometer connections, keep control connection open.
+            if hasattr(self.board, "data_connection"):  #setting con_stop to 1 -> ioloop will also close it.
+                self.board.data_connection.close()
+            if hasattr(self.board, "odometer_connection") and self.board.odometer_connection:
+                self.board.odometer_connection.close()
+
+        #signal iothread to stop data connection
+        #Todo - should it signal and close, or close only, or signal only? set flags back after bootloading?
+        self.con_on.value = 0
+        self.con_stop.value = 1
+        time.sleep(1) #wait for communications to stop - can it check for stop?
+
     # if we clear after every action, refresh does nothing extra
     def refresh(self):
         pass
@@ -139,36 +168,39 @@ class UserProgram:
 
     def show_device(self):
         if self.con_on.value and self.connection_info:
-            print("Device: "+self.pid+": "+self.serialnum+", firmware version "+self.version)
+            print(
+                  f"    Product type: {self.product_id}"
+                  f"\n    Serial: {self.serialnum}"
+                  f"\n    Firmware version: {self.version}")
 
     def show_connection(self):
         con = self.connection_info
         if con and self.con_on.value:
             # example is "A-1:SN is Connected on COM57"  - connect and get serial number?
-            output = "Connection: "+con["type"]+": "
+            output = "    Connection: "+con["type"]+": "
             if con["type"] == "COM":
                 output += "configuration port = "+con["control port"]+", data port = "+con["data port"]
             elif con["type"] == "UDP":
                 output += "ip = "+con["ip"]+", data port = "+con["port1"]+", configuration port = "+con["port2"]
             print(output)
         else:
-            print("Connection: Not connected")
+            print("    Connection: Not connected")
 
     def show_ntrip(self):
         if self.ntrip_on.value:  #and ntrip_target:
             ip = self.ntrip_ip.value.decode()
             port = self.ntrip_port.value
-            status = "NTRIP: Connected to "+ip+":"+str(port)
+            status = "    NTRIP: Connected to "+ip+":"+str(port)
         else:
-            status = "NTRIP: Not connected"
+            status = "    NTRIP: Not connected"
         print(status)
 
     def show_logging(self):
         if self.log_on.value:
             # TODO - count messages logged: either read file (if safe while writing) or communicate with process
-            print("Log: Logging to "+self.log_name.value.decode()) #+" ("+str(num_messages)+" messages logged )")
+            print("    Log: Logging to "+self.log_name.value.decode()) #+" ("+str(num_messages)+" messages logged )")
         else:
-            print("Log: Not logging")
+            print("    Log: Not logging")
 
     # connect using com port or UDP IP and port
     # save output in a json
@@ -214,6 +246,11 @@ class UserProgram:
             debug_print("data success: "+str(data_success)+", control success: "+str(control_success))
             self.con_succeed.value = 0
             if data_success and control_success:
+                # do stuff based on pid here since connect_udp and connect_com get the pid
+                if 'IMU' in self.product_id:
+                    self.show_gps_info = False  # IMU type has no GNSS info
+                else:
+                    self.show_gps_info = True  # default is to show everything
                 return
             else:
                 self.release()
@@ -227,21 +264,27 @@ class UserProgram:
         if selected == "Auto":
             self.release()
             board = IMUBoard.auto(set_data_port=True)
+            if not board:
+                return
         elif selected == "Manual":
             self.release()
             board = IMUBoard()
-            board.connect_manually(set_data_port=True)
+            manual_result = board.connect_manually(set_data_port=True)
+            if manual_result is None:
+                return
         else:  # cancel
             return
         self.board = board
         data_port_name = board.data_port_name
         board.data_connection.close()
 
-        self.serialnum = self.retry_command(method=board.get_serial, response_types=[b'SER']).ser.decode()
-        self.version = self.retry_command(method=board.get_version, response_types=[b'VER']).ver.decode()
-        self.pid = self.retry_command(method=board.get_pid, response_types=[b'PID']).pid.decode()
+        # get product info, or assume bad connection if can't read it
+        if not self.product_info_on_connect(board):
+            board.release_connections()
+            show_and_pause("\nfailed to read product info. Check connection settings and try again.")
+            return
 
-        #let io_thread do the data connection - give it the signal, close this copy
+        # let io_thread do the data connection - give it the signal, close this copy
         self.com_port.value, self.com_baud.value = data_port_name.encode(), board.baud
         self.con_type.value = b"COM"
         self.con_on.value = 1
@@ -286,9 +329,13 @@ class UserProgram:
         #board.data_connection = data_connection
         self.board = board
         #data_connection = board.data_connection
-        self.serialnum = self.retry_command(method=board.get_serial, response_types=[b'SER']).ser.decode()  # this works like a ping - error or timeout if bad connection
-        self.version = self.retry_command(method=board.get_version, response_types=[b'VER']).ver.decode()
-        self.pid = self.retry_command(method=board.get_pid, response_types=[b'PID']).pid.decode()
+
+        # get product info, or assume bad connection if can't read it
+        if not self.product_info_on_connect(board):
+            board.release_connections()
+            show_and_pause("\nFailed to read product info. Check connection settings and try again.")
+            return
+
         if selected == "Manual":
             save_udp_settings(A1_ip, data_port, config_port)
 
@@ -298,6 +345,22 @@ class UserProgram:
         self.con_on.value = 1
         self.con_start.value = 1
         return {"type": "UDP", "ip": A1_ip, "port1": str(data_port), "port2": str(config_port)}
+
+    def product_info_on_connect(self, board):
+        combinations = (
+            (board.get_serial, b'SER', 'ser', 'serialnum'),
+            (board.get_version, b'VER', 'ver', 'version'),
+            (board.get_pid, b'PID', 'pid', 'product_id'))
+
+        for (getter_method, msgtype, attr_name, name_here) in combinations:
+            get_response = self.retry_command(method=getter_method, response_types=[msgtype])
+            if hasattr(get_response, attr_name):
+                setattr(self, name_here, getattr(get_response, attr_name).decode()) # self.product_id = get_response.pid.decode()
+            else:
+                return False  # indicate failed connection
+
+        self.shared_serial_number.value = self.serialnum.encode()
+        return True   # success if none of the reads failed
 
     def configure(self):
         if not self.board:
@@ -333,19 +396,27 @@ class UserProgram:
             return
         args = {}
         name, code = field_names[selected_index], field_codes[selected_index]
-
-        if code == "orn": # special case: choose between two common options or choose to enter it
-            value = self.select_orientation()
+        if code == "aln":
+            print("\nEnter alignment angles")
+            value = form_aln_string_prompt()
         elif code in CFG_VALUE_OPTIONS:
             print("\nselect " + name)
-            value_options = CFG_VALUE_OPTIONS[code]
+            value_options = CFG_VALUE_OPTIONS[code].copy()
+
+            # don't allow message format = binary if any sensor ranges are 0.
+            if code == "mfm":
+                self.board.retry_unlock_flash()
+                ranges = self.board.retry_get_sensor(["rr1", "rr2", "rr3", "ra1", "ra2", "ra3"])
+                if ((ranges is None) or (b'0' in ranges)) and "0" in value_options:
+                    value_options.remove("0")
+
             value_option_names = [CFG_VALUE_NAMES.get((code, opt), opt) for opt in value_options]  # cfg and vale code -> value name
             value = value_options[cutie.select(value_option_names)]
         elif code in CFG_FIELD_EXAMPLES:
-            print("\nenter value for " + name + " " + CFG_FIELD_EXAMPLES[code])
+            print("\nEnter value for " + name + " " + CFG_FIELD_EXAMPLES[code])
             value = input()
         else:
-            print("\nenter value for " + name)
+            print("\nEnter value for " + name)
             value = input()
         args[code] = value.encode()
 
@@ -364,38 +435,6 @@ class UserProgram:
         if not proper_response(resp, b'CFG'):
             show_and_pause("") # proper_response already shows error, just pause to see it.
 
-    def select_orientation(self):
-        #use the orientation selector depending on version
-        if version_greater_or_equal(self.version, '0.3.4'):
-            return self.select_orn_8_opts()
-        return self.select_orn_24_opts()
-
-    #firmware before 0.3.4: 24 options - just show the 2 typical ones and allow entering others
-    def select_orn_24_opts(self):
-        print("\nselect ORIENTATION:")
-        options = CFG_VALUE_OPTIONS["orn"]
-        chosen = options[cutie.select(options)]
-        if "+X+Y+Z" in chosen:
-            return '+X+Y+Z'
-        elif "+Y+X-Z" in chosen:
-            return '+Y+X-Z'
-        else:  # select it yourself
-            print("\nenter value for orientation "+ CFG_FIELD_EXAMPLES["orn"])
-            return input()
-
-    #firmware 0.3.4 or later: 8 orientations: must end in +-Z -> show all 8
-    def select_orn_8_opts(self):
-        print("\nselect ORIENTATION:")
-        options = ORN_8_OPTIONS
-        chosen = options[cutie.select(options)]
-        #allow notes like (north east up) in the name
-        if "+X+Y+Z" in chosen:
-            return '+X+Y+Z'
-        elif "+Y+X-Z" in chosen:
-            return '+Y+X-Z'
-        else:
-            #if no note, the value is correct
-            return chosen
 
     # read all configurations.
     def read_all_configs(self, board):
@@ -422,11 +461,11 @@ class UserProgram:
         # handle if baseline calibration is still going: show a message and retry every
         if 'bcal' in veh_configs:
             current_bcal = veh_configs['bcal']
+            current_bcal_name = VEH_VALUE_NAMES[('bcal', current_bcal.decode())]
             # bcal 2: from lever arms, should finish quickly. 1: auto calibrate, could take a few minutes
-            # TODO make a longer, non-blocking version for auto calibrate?
 
-            if current_bcal in [b"2"]:  #[b"2", b"1"]:
-                print("\nDoing baseline calibration: ", end="")
+            if current_bcal in [b"2", b"1"]:
+                print(f"\nDoing baseline calibration ({current_bcal_name}): ", end="")
                 start_time = time.time()
                 # loop until baseline calibration done, or time limit
                 while (time.time() - start_time) < BCAL_LEVER_ARM_WAIT_SECONDS:
@@ -439,7 +478,7 @@ class UserProgram:
                         print("\nBaseline calibration finished")
                         break
                 if current_bcal != b'0':
-                    print("\nStill doing baseline calibration, check again in a few minutes\n")
+                    print(f"\n\nStill calibrating baseline ({current_bcal_name}), check vehicle configs again in a few minutes.")
         return veh_configs
 
     # Vehicle Configs: same pattern as user configs
@@ -466,20 +505,35 @@ class UserProgram:
                 g2z = float(veh_configs['g2z'])
                 calculated_baseline = sqrt(pow(g2x - g1x, 2) + pow(g2y - g1y, 2) + pow(g2z - g1z, 2))
 
-                # check absolute difference - or should it be fractional difference?
-                if abs(baseline_config - calculated_baseline) > BASELINE_TOLERANCE_FOR_WARNING:
-                    print(f"\nWarning: Antenna baseline is {baseline_config:.4f} meters,"
-                          f" but should be {calculated_baseline:.4f} meters based on antenna lever arms.")
-                    print(f"Please check if your antenna lever arms are accurate.\n")
+                # warning checks for uninitialized lever arms and antenna baselines.
+                # TODO - check these conditions and warning text.
+
+                # warn if antenna lever arms are 0
+                if (g1x == 0) and (g1y == 0) and (g1z == 0) and (g2x == 0) and (g2y == 0) and (g2z == 0):
+                    print("\nWarning: antenna lever arms are all 0, may not have been set.")
+                    print("Accurate antenna baseline is needed for dual antenna heading.")
+
+                # warn if baseline setting is 0
+                elif baseline_config == 0:
+                    print("\nWarning: baseline is zero, may not have been set.")
+                    print("Accurate antenna baseline is needed for dual antenna heading.")
+
+                # warn if baseline doesn't match lever arms using absolute difference
+                elif abs(baseline_config - calculated_baseline) > BASELINE_TOLERANCE_FOR_WARNING:
+                    print(f"\nWarning: Antenna baseline is {baseline_config:.3f} meters,"
+                          f" but should be {calculated_baseline:.3f} meters based on antenna lever arms.")
+                    print(f"Please check if your antenna lever arms are accurate.")
 
             except KeyError:
-                pass # old firmware won't have these configs -> just skip the check
+                pass  # old firmware won't have these configs -> just skip the check
             except ValueError:
-                pass # bad read might not convert to float -> just skip?
+                pass  # bad read might not convert to float -> just skip?
 
             # check connection again since error can be caught in read_all_configs
             if not self.con_on.value:
                 return
+
+            print("")  # blank line before edit/done
             actions = ["Edit", "Done"]
             selected_action = actions[cutie.select(actions)]
             if selected_action == "Edit":
@@ -546,24 +600,24 @@ class UserProgram:
     def ntrip_menu(self):
         if self.connection_info: # and self.connection_info["type"] == "UDP":
             #before A1 fw ver 0.4.3, ntrip is over udp only
-            if self.connection_info["type"] == "UDP" or version_greater_or_equal(self.version, "0.4.3"):
-                clear_screen()
-                self.show_ntrip()
-                options = ["cancel"]
-                if self.ntrip_on.value:
-                    options = ["Stop"] + options
-                else:
-                    options = ["Start"] + options
-                selected = options[cutie.select(options)]
-                if selected == "Start":
-                    self.start_ntrip()
-                elif selected == "Stop":
-                    self.stop_ntrip()
-                else: #cancel
-                    return
+            #if self.connection_info["type"] == "UDP" or version_greater_or_equal(self.version, "0.4.3"):
+            clear_screen()
+            self.show_ntrip()
+            options = ["cancel"]
+            if self.ntrip_on.value:
+                options = ["Stop"] + options
             else:
-                show_and_pause("must connect by UDP to use NTRIP")
+                options = ["Start"] + options
+            selected = options[cutie.select(options)]
+            if selected == "Start":
+                self.start_ntrip()
+            elif selected == "Stop":
+                self.stop_ntrip()
+            else: #cancel
                 return
+            # else:
+            #     show_and_pause("must connect by UDP to use NTRIP")
+            #     return
         else:
             show_and_pause("must connect before starting NTRIP")
             return
@@ -651,16 +705,16 @@ class UserProgram:
         clear_screen()
         print("\nMonitoring in other window. Close it to continue.")
 
-        #TODO - prevent prints for the rest of the function? - PySimpleGUI prints on mac, geotiler error without internet, anything else
-        #but this didn't stop geotiler prints when no internet -> do in geotiler_demo instead?
+        # prevent prints in monitor, like PySimpleGUI prints on mac
+        # this didn't stop geotiler prints when no internet -> do in geotiler_demo too?
+        with open(os.devnull, "w") as f, redirect_stdout(f):
+            self.monitor_main()
 
-    #     with open(os.devnull, "w") as f, redirect_stdout(f):
-    #         self.monitor_main()
-    #
-    # def monitor_main(self):
+    def monitor_main(self):
 
         ascii_scheme = ReadableScheme()
-        binary_scheme = RTCM_Scheme()
+        binary_scheme = Binary_Scheme()
+        rtcm_scheme = RTCM_Scheme()
 
         sg.theme(SGTHEME)
 
@@ -731,6 +785,15 @@ class UserProgram:
         zupt_label = sg.Text("State:", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
         alt_label = sg.Text("Altitude (m):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
 
+        ins_imu_time_label = sg.Text("IMU time ms:", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
+        ins_gps_time_label = sg.Text("GPS time ns:", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
+
+        ins_imu_time_value = sg.Text(MONITOR_DEFAULT_VALUE, key="ins_imu_time", size=MONITOR_VALUE_SIZE, font=value_font, justification=MONITOR_ALIGN)
+        ins_gps_time_value = sg.Text(MONITOR_DEFAULT_VALUE, key="ins_gps_time", size=(30,1), font=value_font, justification="center")
+        #ins_time_row_1 = [ins_imu_time_label, ins_imu_time_value]
+        #ins_time_row_2 = [ins_gps_time_label, ins_gps_time_value]
+        ins_time_row = [ins_imu_time_label, ins_imu_time_value, ins_gps_time_label, ins_gps_time_value]
+
         buttons_row = [gps_button, log_button, time_since_gps_label, time_since_gps, anello_logo]
 
         # latlon_row = [lat_label, lat, lon_label, lon]
@@ -749,7 +812,8 @@ class UserProgram:
         velocity_row = [speed_label, speed, zupt_label, zupt]
         flags_row = [soln_label, soln, num_sats_label2, num_sats_value2]
         gps_fix_row = [gps_carrsoln_label2, gps_carrsoln2, gps_fix_label2, gps_fix2]
-        tab_1_layout = [latlon_row, altitude_row, att_row, velocity_row, flags_row, gps_fix_row]
+        #tab_1_layout = [latlon_row, altitude_row, att_row, velocity_row, flags_row, gps_fix_row, ins_time_row_1, ins_time_row_2]
+        tab_1_layout = [ins_time_row, latlon_row, altitude_row, att_row, velocity_row, flags_row, gps_fix_row]
         ins_tab = sg.Tab(MONITOR_INS_TAB_TITLE, tab_1_layout, key="numbers-tab")#, title_color='Red', background_color='Green', element_justification='center')
 
         # ________________TAB 2: IMU Data_______________________
@@ -764,6 +828,9 @@ class UserProgram:
         temp_value = sg.Text(MONITOR_DEFAULT_VALUE, key="temp_value", size=MONITOR_VALUE_SIZE, font=value_font, justification=MONITOR_ALIGN)
         odo_value = sg.Text(MONITOR_DEFAULT_VALUE, key="odo_value", size=MONITOR_VALUE_SIZE, font=value_font, justification=MONITOR_ALIGN)
 
+        imu_time_value = sg.Text(MONITOR_DEFAULT_VALUE, key="imu_cpu_time", size=MONITOR_VALUE_SIZE, font=value_font, justification=MONITOR_ALIGN)
+        imu_sync_value = sg.Text(MONITOR_DEFAULT_VALUE, key="imu_sync_time", size=MONITOR_VALUE_SIZE, font=value_font, justification=MONITOR_ALIGN)
+
         ax_label = sg.Text("Accel x (g):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
         ay_label = sg.Text("Accel y (g):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
         az_label = sg.Text("Accel z (g):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
@@ -774,6 +841,9 @@ class UserProgram:
         temp_label = sg.Text("Temperature (C):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
         odo_label = sg.Text("Odometer Speed (m/s):", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
 
+        imu_time_label = sg.Text("IMU time ms:", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
+        imu_sync_label = sg.Text("Sync time ms:", size=MONITOR_LABEL_SIZE, font=label_font, justification=MONITOR_ALIGN)
+
         # accel_row = [ax_label, ax_value, ay_label, ay_value, az_label, az_value]
         # mems_rate_row = [wx_label, wx_value, wy_label, wy_value, wz_label, wz_value]
         mems_x_row = [ax_label, ax_value, wx_label, wx_value]
@@ -781,8 +851,9 @@ class UserProgram:
         mems_z_row = [az_label, az_value, wz_label, wz_value]
         fog_row = [temp_label, temp_value, fog_label, fog_value]
         odo_row = [odo_label, odo_value]
+        imu_time_row = [imu_time_label, imu_time_value, imu_sync_label, imu_sync_value]
         #imu_tab_layout = [accel_row, mems_rate_row, fog_row]
-        imu_tab_layout = [mems_x_row, mems_y_row, mems_z_row, fog_row, odo_row]
+        imu_tab_layout = [imu_time_row, mems_x_row, mems_y_row, mems_z_row, fog_row, odo_row]
         imu_tab = sg.Tab(MONITOR_IMU_TAB_TITLE, imu_tab_layout, key="imu-tab")
 
         #________________TAB 3: GPS Data __________________
@@ -987,12 +1058,6 @@ class UserProgram:
             map_image = sg.Image() #(key="-IMAGE-")  # does it need the key?
         # bio = io.BytesIO() #for storing images, but doesn't update properly out here
 
-        #select map source between OSM or Stamen-Terrain
-
-        provider_select_text = sg.Text("source:", size=MONITOR_LABEL_SIZE, font=label_font)
-        provider_select = sg.Combo(MAP_PROVIDERS, default_value=MAP_PROVIDERS[0], readonly=True, key='provider_select')
-
-        #provider_credit_text_holder = sg.Text("", font=(FONT_NAME, PROVIDER_CREDIT_SIZE)) #will update text in loop
         try:
             provider_credit_text_holder = sg.InputText("", disabled=True, expand_x=True, expand_y=True)# border_width, pad
         except Exception as e:
@@ -1008,26 +1073,8 @@ class UserProgram:
         zoom_in_button = sg.Button(" + ", key="zoom_in_button",  enable_events=True, font=value_font)
         zoom_out_button = sg.Button("  - ", key="zoom_out_button", enable_events=True, font=value_font)
 
-        #roll and pitch dials
-        roll_dial_label = sg.Text("roll (deg)", size=(10,1), font=label_font)
-        pitch_dial_label = sg.Text("pitch (deg)", size=(10,1), font=label_font)
-        #roll_dial_image_holder = sg.Image()
-        #pitch_dial_image_holder = sg.Image()
-
-        # Column layout TODO: align/scale the column
-        #map_side_column = sg.Column([[provider_select_text, provider_select],
-        # map_side_column = sg.Frame("", [[provider_select_text, provider_select],
-        #                              #[provider_credit_text_element], #credit text in side column
-        #                              [zoom_label, zoom_out_button, zoom_in_button],
-        #                              [roll_dial_label], [roll_dial_image_holder],
-        #                              [pitch_dial_label], [pitch_dial_image_holder]], element_justification='center',
-        #                              relief=sg.RELIEF_RAISED, border_width=5)
-
-        map_side_frame = sg.Frame("", [[provider_select_text], [provider_select],
-                                        # [provider_credit_text_element], #credit text in side column
+        map_side_frame = sg.Frame("", [
                                         [zoom_label], [zoom_out_button, zoom_in_button],
-                                        #[roll_dial_label],
-                                        #[pitch_dial_label]
                                         ], element_justification='left',
                                         relief=sg.RELIEF_RAISED, border_width=5)
         map_side_column = sg.Column([[map_side_frame]], vertical_alignment='top')
@@ -1047,6 +1094,8 @@ class UserProgram:
                                soln_label, zupt_label, gps_carrsoln_label2, gps_fix_label2, alt_label, num_sats_label2,
                                ax_label, ay_label, az_label, wx_label, wy_label, wz_label, fog_label, temp_label, odo_label,
 
+                               imu_time_label, imu_sync_label, ins_imu_time_label, ins_gps_time_label,
+
                                hdg_heading_label, hdg_length_label, hdg_flags_label,
                                hdg_north_label, hdg_east_label, hdg_down_label,
                                hdg_len_acc_label, hdg_hdg_acc_label,
@@ -1064,6 +1113,8 @@ class UserProgram:
 
         value_font_elements = [lat, lon, speed, att0, att1, att2, soln, zupt, gps_carrsoln2, gps_fix2, alt_value, num_sats_value2,
                                ax_value, ay_value, az_value, wx_value, wy_value, wz_value, fog_value, temp_value, odo_value,
+
+                               imu_time_value, imu_sync_value, ins_imu_time_value, ins_gps_time_value,
 
                                hdg_heading_value, hdg_length_value, hdg_flags_value,
                                hdg_north_value, hdg_east_value, hdg_down_value,
@@ -1085,6 +1136,8 @@ class UserProgram:
 
         top_layout = [buttons_row, [sg.HSeparator()], [tab_group]] #buttons on top, then tab 1 or 2
         window = sg.Window(title="Output monitoring", layout=top_layout, finalize=True, resizable=True)
+        #any updates on elements need to be after this "finalize=True" statement (or after window.read if not finalized)
+
         window.bind('<Configure>', "Configure")
         base_width, base_height = window.size
         debug_print("BASE_WIDTH: "+str(base_width))
@@ -1105,8 +1158,8 @@ class UserProgram:
         last_odo_time = last_ins_time
 
         #fields by message type and tab, for zeroing out when no data.
-        ins_fields = [lat, lon, speed, att0, att1, att2, soln, zupt, alt_value]
-        imu_fields = [ax_value, ay_value, az_value, wx_value, wy_value, wz_value, fog_value, temp_value]
+        ins_fields = [lat, lon, speed, att0, att1, att2, soln, zupt, alt_value, ins_gps_time_value, ins_imu_time_value]
+        imu_fields = [ax_value, ay_value, az_value, wx_value, wy_value, wz_value, fog_value, temp_value, imu_time_value, imu_sync_value]
         ins_tab_gps_fields = [gps_carrsoln2, gps_fix2, num_sats_value2]
         gps_tab_gps_fields = [gps_lat_value,gps_lon_value,gps_elipsoid_value,gps_msl_value,
                               gps_speed_value,gps_heading_value,
@@ -1118,6 +1171,14 @@ class UserProgram:
                               gp2_fix_value, gp2_numsv_value, gp2_carrsoln_value, gp2_spd_acc_value, gp2_hdg_acc_value]
 
         hdg_fields = [hdg_heading_value, hdg_length_value, hdg_flags_value]
+
+        #hide tabs and text that don't apply for the product type.
+        # Hiding is easier than removing since it allows updating the elements. updating a missing element will crash.
+        if not self.show_gps_info:
+            for clickable_item in [ins_tab, gps_tab, gp2_tab, hdg_tab, map_tab, gps_button]:
+                clickable_item.update(visible=False, disabled=True)
+            for text_item in [time_since_gps_label, time_since_gps, odo_label, odo_value]:
+                text_item.update(visible=False) #text elements have no "disabled". could check if hasattr("disabled")
 
         # update loop: check for new messages or button clicks, then update the displayed data
         while True:
@@ -1138,6 +1199,7 @@ class UserProgram:
                 else:
                     configs = {'gps1': b'on', 'gps2': b'on'}
                 write_resp = self.retry_command(method=self.board.set_cfg, args=[configs], response_types=[b'CFG']) #toggle gps in RAM only
+
                 #read again to update button in case of failure
                 read_resp = self.retry_command(method=self.board.get_cfg, args=[["gps1"]], response_types=[b'CFG'])
                 gps_is_on = read_resp.configurations["gps1"] == b'on'
@@ -1193,7 +1255,7 @@ class UserProgram:
                     last_last_ins = self.last_ins_msg.raw
                     last_ins_time = time.time()
 
-                    ins_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_ins_msg.raw)
+                    ins_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_ins_msg.raw)
                     #print(f"\nins_msg: {ins_msg}")
 
                     #update numbers display if active
@@ -1206,18 +1268,18 @@ class UserProgram:
                         window["lon"].update('%.7f'%ins_msg.lon_deg if hasattr(ins_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
 
                         #compute ins speed as magnitude. include vz? should be small anyway
-                        vx = float(ins_msg.velocity_0_mps) if hasattr(ins_msg, "velocity_0_mps") else 0
-                        vy = float(ins_msg.velocity_1_mps) if hasattr(ins_msg, "velocity_1_mps") else 0
-                        vz = float(ins_msg.velocity_2_mps) if hasattr(ins_msg, "velocity_2_mps") else 0
+                        vx = float(ins_msg.velocity_north_mps) if hasattr(ins_msg, "velocity_north_mps") else 0
+                        vy = float(ins_msg.velocity_east_mps) if hasattr(ins_msg, "velocity_east_mps") else 0
+                        vz = float(ins_msg.velocity_down_mps) if hasattr(ins_msg, "velocity_down_mps") else 0
                         magnitude = ((vx**2)+(vy**2)+(vz**2))**(1/2)
 
                         window["speed"].update('%.3f'%magnitude)
                         window["att0"].update(
-                            '%.1f'%ins_msg.attitude_0_deg if hasattr(ins_msg, "attitude_0_deg") else MONITOR_DEFAULT_VALUE)
+                            '%.1f'%ins_msg.roll_deg if hasattr(ins_msg, "roll_deg") else MONITOR_DEFAULT_VALUE)
                         window["att1"].update(
-                            '%.1f'%ins_msg.attitude_1_deg if hasattr(ins_msg, "attitude_1_deg") else MONITOR_DEFAULT_VALUE)
+                            '%.1f'%ins_msg.pitch_deg if hasattr(ins_msg, "pitch_deg") else MONITOR_DEFAULT_VALUE)
                         window["att2"].update(
-                            '%.1f'%ins_msg.attitude_2_deg if hasattr(ins_msg, "attitude_2_deg") else MONITOR_DEFAULT_VALUE)
+                            '%.1f'%ins_msg.heading_deg if hasattr(ins_msg, "heading_deg") else MONITOR_DEFAULT_VALUE)
 
                         window["soln"].update(INS_SOLN_NAMES.get(ins_msg.ins_solution_status, str(ins_msg.ins_solution_status))
                             if hasattr(ins_msg, "ins_solution_status") else MONITOR_DEFAULT_VALUE)
@@ -1227,10 +1289,17 @@ class UserProgram:
 
                         window["altitude"].update('%.1f'%ins_msg.alt_m if hasattr(ins_msg, "alt_m") else MONITOR_DEFAULT_VALUE)
 
+                        window["ins_imu_time"].update(
+                            '%.1f' % ins_msg.imu_time_ms if hasattr(ins_msg, "imu_time_ms") else MONITOR_DEFAULT_VALUE)
+
+                        window["ins_gps_time"].update(
+                            '%d' % ins_msg.gps_time_ns if hasattr(ins_msg, "gps_time_ns") else MONITOR_DEFAULT_VALUE)
+
                     #Update Map if active
                     if active_tab == "map-tab":
                         #credit the provider selected with some text - maps from: name, website, copyright/license terms
-                        provider = values['provider_select'] if values else None
+
+                        provider = "osm"  # force "osm" for now since stamen not working in geotiler.
                         provider_credit_text = MAP_PROVIDER_CREDITS[provider] if provider in MAP_PROVIDER_CREDITS \
                             else "maps from " + str(provider) + ", needs copyright/license info adding here"
                         provider_credit_text_holder.update(provider_credit_text)
@@ -1238,27 +1307,16 @@ class UserProgram:
                         #from ins message - could share variable with text updates above
                         lat = ins_msg.lat_deg if hasattr(ins_msg, "lat_deg") else None #if None, will not update
                         lon = ins_msg.lon_deg if hasattr(ins_msg, "lon_deg") else None
-                        heading = ins_msg.attitude_2_deg if hasattr(ins_msg, "attitude_2_deg") else None #0,1,2 = roll, pitch, heading
+                        heading = ins_msg.heading_deg if hasattr(ins_msg, "heading_deg") else None #0,1,2 = roll, pitch, heading
 
                         #update the map, only if the lat/lon/position all received
                         if (lat is not None) and (lon is not None) and (heading is not None):
+                            #tried to suppress map error prints with no internet, but doesn't work.
+                            #with open(os.devnull, "w") as f, redirect_stdout(f):
                             pil_image = draw_map(lat, lon, current_zoom, MAP_DIMENSIONS, MAP_ARROW_SIZE, heading, arrow_file_path, provider, storage=self.map_cache)
                             bio = io.BytesIO()  # todo- does this accumulate memory? but if bio outside loop, image does't update
                             pil_image.save(bio, format="PNG")  # put it in memory to load
                             map_image.update(data=bio.getvalue()) #todo - check actual window size and handle resizes?
-
-                        #update roll/pitch dials
-                        roll_value = ins_msg.attitude_0_deg if hasattr(ins_msg, "attitude_0_deg") else 0  # 0 default ok?
-                        # roll_dial_image_new = draw_dial(DIAL_SIDE_PIXELS, DIAL_OFFSET_DEG, DIAL_ANGLE_STEP, DIAL_DIRECTION, DIAL_TEXT_SIZE, roll_value)
-                        # bio2 = io.BytesIO()
-                        # roll_dial_image_new.save(bio2, format="PNG") #if I reuse same bio, it puts map image here.
-                        # roll_dial_image_holder.update(data=bio2.getvalue())
-
-                        pitch_value = ins_msg.attitude_1_deg if hasattr(ins_msg, "attitude_1_deg") else 0 #0 default ok?
-                        # pitch_dial_image_new = draw_dial(DIAL_SIDE_PIXELS, DIAL_OFFSET_DEG, DIAL_ANGLE_STEP, DIAL_DIRECTION, DIAL_TEXT_SIZE, pitch_value)
-                        # bio3 = io.BytesIO()
-                        # pitch_dial_image_new.save(bio3, format="PNG")
-                        # pitch_dial_image_holder.update(data=bio3.getvalue())
 
                 # window.refresh()
             if hasattr(self.last_gps_msg, "raw"):
@@ -1282,7 +1340,7 @@ class UserProgram:
                     last_last_gps = self.last_gps_msg.raw
                     last_gps_time = time.time()
                     if active_tab == 'numbers-tab': #these items are in numbers tab, so update only if active
-                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_gps_msg.raw)
+                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_gps_msg.raw)
                         #print(f"\ngps_msg: {gps_msg}")
                         window["gps_carrsoln2"].update(GPS_SOLN_NAMES.get(gps_msg.carrier_solution_status, str(gps_msg.carrier_solution_status))
                                                       if hasattr(gps_msg, "carrier_solution_status") else MONITOR_DEFAULT_VALUE)
@@ -1290,7 +1348,7 @@ class UserProgram:
                                                  if hasattr(gps_msg, "gnss_fix_type") else MONITOR_DEFAULT_VALUE)
                         window["num_sats2"].update(gps_msg.num_sats if hasattr(gps_msg, "num_sats") else MONITOR_DEFAULT_VALUE)
                     if active_tab == 'gps-tab':
-                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_gps_msg.raw)
+                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_gps_msg.raw)
                         #update the fields. todo: can this be a loop over gps_tab_gps_fields?
                         window["gps_lat"].update('%.7f' % gps_msg.lat_deg if hasattr(gps_msg, "lat_deg") else MONITOR_DEFAULT_VALUE)
                         window["gps_lon"].update('%.7f' % gps_msg.lon_deg if hasattr(gps_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
@@ -1325,7 +1383,7 @@ class UserProgram:
                     last_last_gp2 = self.last_gp2_msg.raw
                     last_gp2_time = time.time()
                     if active_tab == 'gp2-tab':
-                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_gp2_msg.raw)
+                        gps_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_gp2_msg.raw)
                         #update the fields. todo: can this be a loop over gps_tab_gps_fields?
                         window["gp2_lat"].update('%.7f' % gps_msg.lat_deg if hasattr(gps_msg, "lat_deg") else MONITOR_DEFAULT_VALUE)
                         window["gp2_lon"].update('%.7f' % gps_msg.lon_deg if hasattr(gps_msg, "lon_deg") else MONITOR_DEFAULT_VALUE)
@@ -1361,8 +1419,8 @@ class UserProgram:
                     # last_last_imu = self.last_imu_msg.value
                     last_last_imu = self.last_imu_msg.raw
                     last_imu_time = time.time()
+                    imu_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_imu_msg.raw)
                     if active_tab == 'imu-tab':
-                        imu_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_imu_msg.raw)
                         #print(f"\nimu_msg: {imu_msg}")
                         #update the imu fields from the message
                         window["ax_value"].update('%.4f'%imu_msg.accel_x_g if hasattr(imu_msg, "accel_x_g")
@@ -1381,6 +1439,10 @@ class UserProgram:
                                                    if hasattr(imu_msg, "fog_angrate_z_dps") else MONITOR_DEFAULT_VALUE)
                         window["temp_value"].update('%.2f' % imu_msg.temperature_c
                                                    if hasattr(imu_msg, "temperature_c") else MONITOR_DEFAULT_VALUE)
+                        window["imu_cpu_time"].update('%.2f' % imu_msg.imu_time_ms
+                                                    if hasattr(imu_msg, "imu_time_ms") else MONITOR_DEFAULT_VALUE)
+                        window["imu_sync_time"].update('%.2f' % imu_msg.sync_time_ms
+                                                    if hasattr(imu_msg, "sync_time_ms") else MONITOR_DEFAULT_VALUE)
 
                         #message with an odometer speed/time: update the latest speed, reset timer.
                         if hasattr(imu_msg, "odometer_speed_mps") and hasattr(imu_msg, "odometer_time_ms") and imu_msg.odometer_time_ms > 0:
@@ -1406,7 +1468,7 @@ class UserProgram:
                     last_last_hdg = self.last_hdg_msg.raw
                     last_hdg_time = time.time()
                     if active_tab == 'hdg-tab':
-                        hdg_msg = try_multiple_parsers([binary_scheme, ascii_scheme], self.last_hdg_msg.raw)
+                        hdg_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_hdg_msg.raw)
                         #print(f"new heading message: {hdg_msg}")
                         #update the hdg monitor fields here
                         window["hdg_hdg"].update('%.2f' % hdg_msg.relPosHeading_deg if hasattr(hdg_msg, "relPosHeading_deg")
@@ -1449,34 +1511,50 @@ class UserProgram:
     # tell them to get bootloader exe and hex, give upgrade instructions. Will not do this automatically yet.
     # prompt to activate boot loader mode
     def upgrade(self):
-        print("\nSoftware upgrade steps:")
-
-        print("\nMake sure you have the bootloader (HtxAurixBootLoader.exe) and the image (.hex file) in the same directory.")
-        print("\nWhen ready, select \"Yes\" below to enter bootloading mode. The product will pause until upgrade complete or power is cycled.")
-        print("\nThen open a terminal in the bootloader location and run these commands:")
-        print(f"\t.\HtxAurixBootLoader.exe START TC36X 6 {self.com_port.value.decode().lstrip('COM')} 115200 0 0 0 0")
-        print("\t.\HtxAurixBootLoader.exe PROGRAMVERIFY <hex file name> 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFF0000 0x0")
-        print("\t.\HtxAurixBootLoader.exe END")
-
-        print("\nAfter each bootload step it should say \"Operation Successful!\"")
-        print("When the END step is complete, you can continue using the product. The new firmware version should show in system status.")
-
+        print("\nFirmware upgrade process")
         print("\nNotes:")
-        print("\tBootloading is over serial only, not ethernet. The bootloader currently requires Windows OS.")
-        print("\tThe bootloader commands will not work unless you first enter bootloading mode by selecting \"Yes\" here.")
-        print("\tThe second number in START command is the data port number, eg 3 if the data port is COM3. All other numbers are fixed.")
-        print("\tThe PROGRAMVERIFY command uses the name of the hex file, such as IMU-A1_v-0.4.22.hex")
+        print("\tGet the firmware file from Anello Photonics: IMU-A1_v<version number>.hex")
+        print("\tSoftware update is over USB only, not ethernet.")
+        print("\tRequires Windows OS.")
 
-        if self.board and self.connection_info["type"] == "COM":
-            print("\nenter upgrade mode now?")
-            options = ["Yes", "No"]
-            selected = options[cutie.select(options)]
-            if selected == "Yes":
-                self.board.enter_bootloading()
-                self.release()
-                show_and_pause("Entered upgrade mode. Run bootloader and then reconnect.")
+        # check for windows, connected over usb
+        if os.name != 'nt':
+            show_and_pause("\nBootloader currently works on Windows only.")
+            return
+
+        if not (self.board and self.connection_info["type"] == "COM"):
+            show_and_pause("\nMust connect by USB before upgrading (not over ethernet)")
+
+            return
+
+        print("\nSelect the firmware file")
+        hex_files_only_option = [("hex files", ".hex")]  # only allows picking .hex file.
+        hex_file_path = pick_one_file(initialdir=None,
+                                      title="Select hex file to load: IMU-A1_<version>.hex",
+                                      filetypes=hex_files_only_option)
+        if not hex_file_path: #on cancel, askopenfilename returns ""
+            show_and_pause("\nfile not selected")
+            return  # cancel the upgrade. TODO - should it open file picker again?
+        hex_file_location, hex_file_name = os.path.split(hex_file_path) #or use os.path.basename, dirname
+
+        print(f"\nSelected {hex_file_name}. Upgrade now?")
+        options = ["Yes", "No"]
+        if options[cutie.select(options)] == "Yes":
+            self.release_for_bootload() #release data port and stop functions that use it like logging, ntrip
+            try:
+                expect_version_after = "unknown"  # this means it won't check expected version
+                self.board.bootload_with_file_path(hex_file_path, expect_version_after, num_attempts=1)
+            except Exception as e:
+                print(f"\nError during firmware upgrade: {type(e)}: {e}\n")
+                traceback.print_exc()
+                show_and_pause("\nTry cycling power on unit and connect again. If it doesn't start up, contact Anello Photonics")
+                return #should it try to connect here?
+
+            show_and_pause(f"\n\nFinished updating")
+            self.connect()  # go back to connect step since it disconnects during bootload.
+
         else:
-            show_and_pause("\nMust connect by COM port before entering upgrade mode")
+            return
 
     # send regular reset, not bootloading reset
     def reset(self):
@@ -1544,7 +1622,6 @@ def version_greater_or_equal(our_ver, compareto):
         elif our_nums[i] < other_nums[i]:
             return False
     return True #equal
-
 
 #try parsing a message by multiple parsers, return result of whichever worked (valid)
 def try_multiple_parsers(parser_list, raw_data):
@@ -1645,19 +1722,34 @@ def save_ntrip_settings(settings): #UserProgram
         return None
 
 
+# prompt to form aln config from 3 angles into one string
+# TODO - check what angle range to allow for these
+def form_aln_string_prompt():
+    roll_angle = cutie.get_number(prompt="roll adjustment (degrees): ", min_value=-360, max_value=360, allow_float=True)
+    pitch_angle = cutie.get_number(prompt="pitch adjustment (degrees): ", min_value=-360, max_value=360, allow_float=True)
+    heading_angle = cutie.get_number(prompt="heading adjustment (degrees): ", min_value=-360, max_value=360, allow_float=True)
+    return f"{roll_angle:+.6f}{pitch_angle:+.6f}{heading_angle:+.6f}"
+
+
 #(data_connection, logging_on, log_name, log_file, ntrip_on, ntrip_reader, ntrip_request, ntrip_ip, ntrip_port)
 def runUserProg(exitflag, con_on, con_start, con_stop, con_succeed,
                 con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                 log_on, log_start, log_stop, log_name,
                 ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
                 ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
-                last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg):
+                last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg,
+                last_imu_time,
+                serial_number
+    ):
     prog = UserProgram(exitflag, con_on, con_start, con_stop, con_succeed,
                        con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                        log_on, log_start, log_stop, log_name,
                        ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
                        ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
-                       last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg)
+                       last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg,
+                       last_imu_time,
+                       serial_number
+    )
     prog.mainloop()
 
 
@@ -1701,11 +1793,18 @@ if __name__ == "__main__":
     last_imu_msg = Array('c', string_size)
     last_hdg_msg = Array('c', string_size)
 
+    last_imu_time = Value('d', 0)
+
+    serial_number = Array('c', string_size)
+
     shared_args = (exitflag, con_on, con_start, con_stop, con_succeed,
                    con_type, com_port, com_baud, udp_ip, udp_port, gps_received,
                    log_on, log_start, log_stop, log_name,
                    ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed, ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
-                   last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg)
+                   last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg,
+                   last_imu_time,
+                   serial_number              
+    )
     io_process = Process(target=io_loop, args=shared_args)
     io_process.start()
     runUserProg(*shared_args) # must do this in main thread so it can take inputs

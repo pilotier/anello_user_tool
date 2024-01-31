@@ -13,6 +13,8 @@ import pathlib
 import math
 import os
 
+PLOT_WIDTH_IN, PLOT_HEIGHT_IN = 19, 9
+
 try:  # importing from inside the package
     import readable_scheme
     from message_scheme import Message
@@ -30,8 +32,8 @@ def default_log_name(serialNum = None):
     local = time.localtime()
     date_nums = [local.tm_year, local.tm_mon, local.tm_mday]
     time_nums = [local.tm_hour, local.tm_min, local.tm_sec]
-    date_str = "date_" + "_".join([str(num) for num in date_nums])
-    time_str = "time_" + "_".join([str(num) for num in time_nums])
+    date_str = "date_" + "_".join([str(num).zfill(2) for num in date_nums])
+    time_str = "time_" + "_".join([str(num).zfill(2) for num in time_nums])
     if serialNum is None:
         return "output_" + date_str + "_" + time_str + LOG_FILETYPE
     else:
@@ -55,6 +57,7 @@ class Collector:
         self.gps_messages = []
         self.gp2_messages = []
         self.ins_messages = []
+        self.hdg_messages = []
         self.invalid_messages = []
 
         self.log_messages = log_messages
@@ -79,6 +82,7 @@ class Collector:
         self.last_gps_message_time = None
         self.last_gp2_message_time = None
         self.last_ins_message_time = None
+        self.last_hdg_message_time = None
 
     # re-initialize in case board has to re-initialize
     def reset(self):
@@ -173,6 +177,9 @@ class Collector:
                 self.add_delta_t_ins(message)
                 self.ins_messages.append(message)
                 pass
+            elif message.msgtype == b'HDG':
+                self.add_delta_t_hdg(message)
+                self.hdg_messages.append(message)
             if self.log_messages_detailed:
                 self.log_line("Message: " + str(message.__dict__))
             else:
@@ -322,6 +329,14 @@ class Collector:
         except Exception as e:
             print("could not compute time for message: "+str(message))
 
+    def add_delta_t_hdg(self, message):
+        try:
+            if self.last_hdg_message_time:
+                message.delta_t = message.imu_time_ms - self.last_hdg_message_time
+            self.last_hdg_message_time = message.imu_time_ms
+        except Exception as e:
+            print("could not compute time for message: "+str(message))
+
     # do a transformation on one message
     # message - the message to be transformed
     # attr_list: the attributes of the message to transform
@@ -371,6 +386,9 @@ class Collector:
     def get_vector_ins(self, var_name):
         return np.array([getattr(m, var_name) for m in self.ins_messages if hasattr(m, var_name)])
 
+    def get_vector_hdg(self, var_name):
+        return np.array([getattr(m, var_name) for m in self.hdg_messages if hasattr(m, var_name)])
+
     def num_messages(self):
         return len(self.messages)
 
@@ -379,6 +397,12 @@ class Collector:
 
     def num_gps_messages(self):
         return len(self.gps_messages)
+
+    def num_gp2_messages(self):
+        return len(self.gp2_messages)
+
+    def num_hdg_messages(self):
+        return len(self.hdg_messages)
 
     # plotting collected data with one variable against another
     def plot(self, independentVar, dependentVar, gps=False, show=True):
@@ -401,7 +425,7 @@ class Collector:
 
     #plot a variable in message order, not vs another var
     # TODO - plot_in_order(messagetype, attr) - message type instead of gps true/false
-    def plot_in_order(self, dependentVar, msgtype="imu"):
+    def plot_in_order(self, dependentVar, msgtype="imu", title="", show=True, save_fig=False):
         if msgtype == 'gps':
             get_func = self.get_vector_gps
         elif msgtype == 'gp2':
@@ -422,8 +446,18 @@ class Collector:
 
         plt.plot(dependent_data, "rx")
         plt.ylabel(dependentVar)
-        plt.title(f"{msgtype} message {dependentVar} in order ")
-        plt.show()
+        if title:
+            plt.title(title)
+        else:
+            plt.title(f"{msgtype} message {dependentVar} in order ")
+        plt.gcf().set_size_inches(PLOT_WIDTH_IN, PLOT_HEIGHT_IN)
+        if save_fig:
+            plot_name = title+".png" if title else f"{msgtype}_message_{dependentVar}_in_order.png"
+            plt.savefig(os.path.join("save_plots", plot_name))
+            #plt.savefig(plot_name)
+        if show:
+            plt.show()
+        plt.close()
         print("plot_in_order complete")
 
     # plot multiple variables versus 1. dependentVars is a list of variable name strings.
@@ -447,9 +481,13 @@ class Collector:
 
     # plot multiple vars in separate plots
     # length of arrays has to match, so can't put delta_t here alongside other things since it has one less.
-    def plot_multi_separately(self, independentVar, dependentVars, msgtype='imu', columns=2, show=True):
+    def plot_multi_separately(self, independentVar, dependentVars, msgtype='imu', columns=2, show=True, title=None, save_fig=False):
         num_rows = math.ceil(len(dependentVars) / columns)
         fig, a = plt.subplots(nrows=num_rows, ncols=columns, sharex=True, sharey=False)
+
+        if title:
+            plt.suptitle(title)
+
         if msgtype == 'gps':
             get_func = self.get_vector_gps
         elif msgtype == 'gp2':
@@ -473,25 +511,37 @@ class Collector:
             #plt.grid()
         plt.xlabel(independentVar)
         #plt.grid()
+        plt.gcf().set_size_inches(PLOT_WIDTH_IN, PLOT_HEIGHT_IN)
+        if save_fig:
+            plot_name = title+".png" if title else "multiple_plot.png"
+            plt.savefig(os.path.join("save_plots", plot_name))
+            #plt.savefig(plot_name)
         if show:
             plt.show()
+        plt.close()
         print("plot_multi_separately complete")
 
-    def plot_all_accelerations(self):
-        self.plot_multi_separately("imu_time_ms", ["accel_x_g", "accel_y_g", "accel_z_g"], columns=1, msgtype='imu')
+    def plot_all_accelerations(self, title="", show=True, save_fig=False):
+        new_title = title + " All Accelerations"
+        self.plot_multi_separately("imu_time_ms", ["accel_x_g", "accel_y_g", "accel_z_g"],
+                                   columns=1, msgtype='imu', title=new_title, show=show, save_fig=save_fig)
 
-    def plot_all_rates(self):
-        self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"], columns=1, msgtype='imu')
+    def plot_all_rates(self, title="", show=True, save_fig=False):
+        new_title = title + " All Rates"
+        self.plot_multi_separately("imu_time_ms", ["angrate_x_dps", "angrate_y_dps", "angrate_z_dps"],
+                                   columns=1, msgtype='imu', title=new_title, show=show, save_fig=save_fig)
 
-    def plot_everything_imu(self, ncols=2):
+    def plot_everything_imu(self, ncols=2, title="", show=True, save_fig=False):
+        new_title = title + " all IMU fields"
         names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_z_dps", "temperature_c"]
         #if 3 fog, do all 3 fogs as separate plot
         if len(self.get_vector("fog_angrate_x_dps")) > 0:
             fog_names = ["fog_angrate_x_dps", "fog_angrate_y_dps", "fog_angrate_z_dps", "temperature_c"]
-            self.plot_multi_separately("imu_time_ms", fog_names, columns=ncols, msgtype='imu')
-        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='imu')
+            self.plot_multi_separately("imu_time_ms", fog_names, columns=ncols, msgtype='imu', title=title+" FOG Rates")
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='imu', title=new_title, show=show, save_fig=save_fig)
 
-    def plot_everything_cal(self, ncols=2):
+    def plot_everything_cal(self, ncols=2, title="", show=True, save_fig=False):
+        #new_title = title + " All Cal Fields"
         #names = ["accel_x", "rate_x", "accel_y", "rate_y", "accel_z", "rate_z", "temperature"]
         
         #everything in one plot - worth doing?
@@ -504,16 +554,20 @@ class Collector:
         az_fields =   ["accel1_z_cnts", "accel2_z_cnts", "accel3_z_cnts"]
         wx_fields =   ["rate1_x_cnts",  "rate2_x_cnts",  "rate3_x_cnts"]
         wy_fields =   ["rate1_y_cnts",  "rate2_y_cnts",  "rate3_y_cnts"]
-        wz_fields =   ["rate1_z_cnts",  "rate2_z_cnts",  "rate3_z_cnts", "fog1_cnts"]
+        wz_fields =   ["rate1_z_cnts",  "rate2_z_cnts",  "rate3_z_cnts"]
+        fog_fields=   ["fog1_cnts", "fog2_cnts", "fog3_cnts"]
         temp_fields = ["temp1_cnts",    "temp2_cnts",    "temp3_cnts", "fog1_temp_cnts"]
 
-        self.plot_multi_separately("time", ax_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", ay_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", az_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", wx_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", wy_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", wz_fields, columns=ncols, msgtype='cal')
-        self.plot_multi_separately("time", temp_fields, columns=ncols, msgtype='cal')
+        self.plot_multi_separately("time", ax_fields, columns=1, msgtype='cal', title=title+" ax", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", ay_fields, columns=1, msgtype='cal', title=title+" ay", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", az_fields, columns=1, msgtype='cal', title=title+" az", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", wx_fields, columns=1, msgtype='cal', title=title+" wx", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", wy_fields, columns=1, msgtype='cal', title=title+" wy", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", wz_fields, columns=1, msgtype='cal', title=title+" wz", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", fog_fields, columns=1, msgtype='cal', title=title + " fogs", show=show, save_fig=save_fig)
+        self.plot_multi_separately("time", temp_fields, columns=2, msgtype='cal', title=title+" temp", show=show, save_fig=save_fig)
+        # if show:
+        #     plt.show()
 
         # if len(self.get_vector("rate_fog_1")) > 0:
         #     fog_names = ["rate_fog_1", "rate_fog_2", "rate_fog_3", "temperature"]
@@ -522,7 +576,7 @@ class Collector:
         #     names.append("rate_fog") #will put it in the next plot
         #     pass
 
-    def plot_fog_cal(self):
+    def plot_fog_cal(self, save_fig=False):
         #self.plot_multi_separately("time", ["rate_fog"], columns=1)
         self.plot("time", "rate_fog")
 
@@ -598,79 +652,84 @@ class Collector:
         plt.legend(loc="upper right")
         plt.show()
 
-    def plot_times(self):
+    def plot_times(self, title="", show=True, save_fig=False):
         #TODO - plot_in_order(messagetype, attr)
-        self.plot_in_order("imu_time_ms", "imu")
+        self.plot_in_order("imu_time_ms", "imu", title=title+" IMU time", show=show, save_fig=save_fig)
 
-    def plot_dt(self):
-        self.plot_in_order("delta_t", "imu")
+    def plot_dt(self, title="", show=True, save_fig=False):
+        self.plot_in_order("delta_t", "imu", title=title+" IMU dt", show=show, save_fig=save_fig)
         # self.plot("imu_time_ms", "delta_t")
 
-    def plot_times_cal(self):
+    def plot_times_cal(self, title="", show=True, save_fig=False):
         #TODO - plot_in_order(messagetype, attr)
-        self.plot_in_order("time", "cal")
+        self.plot_in_order("time", "cal", title=title+" CAL time", show=show, save_fig=save_fig)
 
-    def plot_dt_cal(self):
-        self.plot_in_order("delta_t", "cal")
+    def plot_dt_cal(self, title="", show=True, save_fig=False):
+        self.plot_in_order("delta_t", "cal", title=title+" CAL dt", show=show, save_fig=save_fig)
         #self.plot("time", "delta_t")
 
-    def plot_times_ins(self):
+    def plot_times_ins(self, title="", show=True, save_fig=False):
         #TODO - plot_in_order(messagetype, attr)
-        self.plot_in_order("imu_time_ms", "ins")
+        self.plot_in_order("imu_time_ms", "ins", title=title+" INS time", show=show, save_fig=save_fig)
 
-    def plot_dt_ins(self):
-        self.plot_in_order("delta_t", "ins")
+    def plot_dt_ins(self, title="", show=True, save_fig=False):
+        self.plot_in_order("delta_t", "ins", title=title+" INS dt", show=show, save_fig=save_fig)
         #self.plot("time", "delta_t")
 
-    def plot_all_vs_temp(self, ncols=2):
+    def plot_all_vs_temp(self, ncols=2, title="", show=True, save_fig=False):
+        new_title = title + " Everything vs Temperature"
         names = ["accel_x_g", "angrate_x_dps", "accel_y_g", "angrate_y_dps", "accel_z_g", "angrate_z_dps", "fog_angrate_z_dps"]
-        self.plot_multi_separately("temperature_c", names, columns=ncols, msgtype='imu')
+        self.plot_multi_separately("temperature_c", names, columns=ncols, msgtype='imu', title=new_title, show=show, save_fig=save_fig)
 
     #plot GPS messages. TODO - do this for GP2 too?
-    def plot_all_gps(self, ncols=2):
+    def plot_all_gps(self, ncols=2, title="", show=True, save_fig=False):
+        new_title = title + " all GPS fields"
         names = ["gps_time_ns", "lat", "lon", "alt_ellipsoid_m", "alt_msl_m", "speed_m_per_s", "heading_degrees",
                  "acc_horizontal_m", "acc_vertical_m", "PDOP", "fix-type", "numSV", "spdacc", "hdsacc"]
 
-        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='gps')
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='gps', title=new_title, show=show, save_fig=save_fig)
 
     #def plot_gps_time_only(self, ncols=2):
         #self.plot_multi_separately("imu_time_ms", ["gps_time_ns"], columns=ncols, msgtype='gps')\
 
-    def plot_times_gps(self):
-        self.plot_in_order("imu_time_ms", "gps")
+    def plot_times_gps(self, title="", show=True, save_fig=False):
+        self.plot_in_order("imu_time_ms", "gps", title=title+" GPS message imu_time_ms", show=show, save_fig=save_fig)
 
     #def plot_gp2_time_only(self, ncols=2):
         #self.plot_multi_separately("imu_time_ms", ["gps_time_ns"], columns=ncols, msgtype='gp2')
 
-    def plot_times_gp2(self):
-        self.plot_in_order("imu_time_ms", "gp2")
+    def plot_times_gp2(self, title="", show=True, save_fig=False):
+        self.plot_in_order("imu_time_ms", "gp2", title=title+" GP2 message imu_time_ms", show=show, save_fig=save_fig)
 
-    def plot_dt_gps(self):
-        self.plot_in_order("delta_t", "gps")
+    def plot_dt_gps(self, title="", show=True, save_fig=False):
+        self.plot_in_order("delta_t", "gps", title=title+" GPS message delta imu time", show=show, save_fig=save_fig)
 
-    def plot_dt_gp2(self):
-        self.plot_in_order("delta_t", "gp2")
+    def plot_dt_gp2(self, title="", show=True, save_fig=False):
+        self.plot_in_order("delta_t", "gp2", title=title+" GP2 message delta imu time", show=show, save_fig=save_fig)
 
     #plot all ins message data
     #possible issue: some variables of INS message appear at different times -> use default value when missing?
     #this one needs gps data from the beginning of log.
-    def plot_everything_ins(self, ncols=2):
+    def plot_everything_ins(self, ncols=2, title="", show=True, save_fig=False):
+        new_title = title+" All INS fields"
         names = ["imu_time_ms", "gps_time_ns", "ins_solution_status",
                 "lat_deg", "lon_deg", "alt_m",
-                "velocity_0_mps", "velocity_1_mps", "velocity_2_mps",
-                "attitude_0_deg", "attitude_1_deg", "attitude_2_deg", "zupt_flag"]
+                "velocity_north_mps", "velocity_east_mps", "velocity_down_mps",
+                "roll_deg", "pitch_deg", "heading_deg", "zupt_flag"]
 
-        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins')
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins', title=new_title, show=show, save_fig=save_fig)
 
     #skip anything which needs gps - just show the angles for rotation tests
-    def plot_ins_no_gps_data(self, ncols=2):
-        names = ["ins_solution_status", "attitude_0_deg", "attitude_1_deg", "attitude_2_deg", "zupt_flag"]
-        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins')
+    def plot_ins_no_gps_data(self, ncols=2, title="", show=True, save_fig=False):
+        new_title = title+" INS fields without GPS"
+        names = ["ins_solution_status", "roll_deg", "pitch_deg", "heading_deg", "zupt_flag"]
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins', title=new_title, show=show, save_fig=save_fig)
 
     #just angles, skip solution and zupt which don't matter for rotation test
-    def plot_ins_angles_vs_time(self, ncols=1):
-        names = ["attitude_0_deg", "attitude_1_deg", "attitude_2_deg"]
-        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins')
+    def plot_ins_angles_vs_time(self, ncols=1, title="", show=True, save_fig=False):
+        new_title = title + " INS angles vs time"
+        names = ["roll_deg", "pitch_deg", "heading_deg"]
+        self.plot_multi_separately("imu_time_ms", names, columns=ncols, msgtype='ins', title=new_title, show=show, save_fig=save_fig)
 
 
 # tracks the statistics for one session, like total messages, invalid messages, missed messages

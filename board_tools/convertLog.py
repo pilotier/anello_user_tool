@@ -4,8 +4,7 @@ parent_dir = str(pathlib.Path(__file__).parent)
 sys.path.append(parent_dir+'/src')
 from tools import *
 import os
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename, askopenfilenames
+from file_picking import pick_one_file, pick_multiple_files
 import json
 from user_program_config import *
 
@@ -82,9 +81,8 @@ def format_field(msgtype, var_name, value):
 
 
 def export_logs_detect_format():
-    Tk().withdraw()
     default_dir = os.path.join(os.path.dirname(__file__), "../logs")
-    file_paths = askopenfilenames(initialdir=default_dir, title="Select one or multiple logs to convert")
+    file_paths = pick_multiple_files(initialdir=default_dir, title="Select one or multiple logs to convert")
     if not file_paths or len(file_paths) == 0:  # empty on cancel
         print("cancelled")
         return False  # indicates cancel
@@ -94,9 +92,13 @@ def export_logs_detect_format():
             print(f"\nexporting {file_path} (detected ascii format)")
             if export_log_by_format(file_path, "ascii"):
                 print(f"\nfinished exporting {file_path}")
+        elif log_is_rtcm(file_path):
+            print(f"\nexporting {file_path} (detected rtcm format)")
+            if export_log_by_format(file_path, "rtcm"):
+                print(f"\nfinished exporting {file_path}")
         elif log_is_binary(file_path):
             print(f"\nexporting {file_path} (detected binary format)")
-            if export_log_by_format(file_path, "rtcm"):
+            if export_log_by_format(file_path, "binary"):
                 print(f"\nfinished exporting {file_path}")
         else:
             print(f"\ncould not detect format for file: {file_path}")
@@ -110,8 +112,10 @@ def export_log_by_format(file_path, format="rtcm"):
     elif format == "rtcm":
         parse_scheme = RTCM_Scheme()
         #start_char = b'\xD3'
+    elif format == "binary":
+        parse_scheme = Binary_Scheme()
     else:
-        print(f"unknown format {format}, must be ascii or rtcm")
+        print(f"unknown format {format}, must be ascii, binary or rtcm")
         return
 
     # if format == "ascii":
@@ -189,6 +193,8 @@ def export_log_by_format(file_path, format="rtcm"):
             m = parse_scheme.read_one_message(reader)
         elif format == "rtcm":
             m = parse_scheme.read_message_from_file(reader)
+        elif format == "binary":
+            m = parse_scheme.read_one_message_withlength(reader)
 
         if m is None: #done reading
             break
@@ -220,7 +226,8 @@ def export_log_by_format(file_path, format="rtcm"):
 
         else:
             errors_count += 1
-            #print("invalid message: "+str(m))
+            debug_print(f"\ninvalid message on line {line_num}: type = {m.msgtype if hasattr(m, 'msgtype') else 'None'}, valid = {m.valid}")
+            debug_print(m)
 
     reader.close()
     ins_out.close()
@@ -249,19 +256,29 @@ def log_is_ascii(log_path):
     return False
 
 
-def log_is_binary(log_path):
-    binary_scheme = RTCM_Scheme()
+def log_is_rtcm(log_path):
+    rtcm_scheme = RTCM_Scheme()
     file_reader = FileReaderConnection(log_path)
     for i in range(3):
-        #could use binary_scheme.read_one_message here but it reads wrong when start char 0xD3 occurs inside the message
+        #could use rtcm_scheme.read_one_message here but it reads wrong when start char 0xD3 occurs inside the message
         #read_message_from_file uses pyrtcm read and is more reliable. TODO - make read_one_message work like that?
-        m = binary_scheme.read_message_from_file(file_reader)
+        m = rtcm_scheme.read_message_from_file(file_reader)
         if m and hasattr(m, "valid") and m.valid:
             file_reader.close()
             return True
     file_reader.close()
     return False
 
+def log_is_binary(log_path):
+    binary_scheme = Binary_Scheme()
+    file_reader = FileReaderConnection(log_path)
+    for i in range(3):
+        m = binary_scheme.read_one_message(file_reader)
+        if m and hasattr(m, "valid") and m.valid:
+            file_reader.close()
+            return True
+    file_reader.close()
+    return False
 
 if __name__ == "__main__":
     export_logs_detect_format()

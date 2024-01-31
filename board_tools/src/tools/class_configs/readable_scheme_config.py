@@ -13,56 +13,8 @@ READ_RAM = b'r'
 WRITE_FLASH = b'W'
 READ_FLASH = b'R'
 
-#time as float # of ms, accel_x, accel_y, accel_z, rate_x, rate_y, rate_z, temperature with no counter
 
-#make ascii cal field names match binary so table generation and plotting programs stay the same
-FORMAT_CAL = [ #updated version for 1.0 release, has 3 mems
-    ("time", float), #time in milliseconds, fractional
-
-    ("accel1_x_cnts", int), #mems accel x, counts
-    ("accel1_y_cnts", int), #mems accel y, counts
-    ("accel1_z_cnts", int), #mems accel z, counts
-    ("rate1_x_cnts", int), #mems rate x, counts
-    ("rate1_y_cnts", int), #mems rate y, counts
-    ("rate1_z_cnts", int), #mems rate z, counts
-    ("temp1_cnts", int), #counts
-
-    ("accel2_x_cnts", int),  # mems accel x, counts
-    ("accel2_y_cnts", int),  # mems accel y, counts
-    ("accel2_z_cnts", int),  # mems accel z, counts
-    ("rate2_x_cnts", int),  # mems rate x, counts
-    ("rate2_y_cnts", int),  # mems rate y, counts
-    ("rate2_z_cnts", int),  # mems rate z, counts
-    ("temp2_cnts", int),  # counts
-
-    ("accel3_x_cnts", int),  # mems accel x, counts
-    ("accel3_y_cnts", int),  # mems accel y, counts
-    ("accel3_z_cnts", int),  # mems accel z, counts
-    ("rate3_x_cnts", int),  # mems rate x, counts
-    ("rate3_y_cnts", int),  # mems rate y, counts
-    ("rate3_z_cnts", int),  # mems rate z, counts
-    ("temp3_cnts", int),  # counts
-
-    ("fog1_cnts", int), #fog rate z, counts  #if more fogs, they go after: TODO make 3 fog version?
-    ("fog1_temp_cnts", int)
-]
-
-FORMAT_CAL_3FOG = [
-    ("time", float), #time in milliseconds, fractional
-    ("accel_x", int), #mems accel x, counts
-    ("accel_y", int), #mems accel y, counts
-    ("accel_z", int), #mems accel z, counts
-    ("rate_x", int), #mems rate x, counts
-    ("rate_y", int), #mems rate y, counts
-    ("rate_z", int), #mems rate z, counts
-    ("temperature", int), #counts
-    ("rate_fog_1", int), #is it z/x/y order? or just 1/2/3 and apply sensaxes
-    ("rate_fog_2", int),
-    ("rate_fog_3", int)
-]
-
-
-#APIMU,7757199.318,-0.0004,0.0131,0.5096,1.8946,-0.2313,-0.4396,0*7E
+# APIMU,7757199.318,-0.0004,0.0131,0.5096,1.8946,-0.2313,-0.4396,0*7E
 FORMAT_IMU_NO_SYNC = [ #normal EVK, length 11
     ("imu_time_ms", float),
     #("sync_time_ms", float),
@@ -119,6 +71,7 @@ FORMAT_IMU_WITH_SYNC = [ #normal EVK, length 12
 #     ("temperature_c", float)
 # ]
 
+#3 fog with no sync format- is this still used?
 FORMAT_IMU_3FOG = [ #length 13
     ("imu_time_ms", float),
     ("accel_x_g", float),
@@ -163,6 +116,15 @@ FORMAT_IM1 = [ #for IMU or IMU+: no odo, has sync time. has FOG rate even if dis
     ("angrate_z_dps", float),
     ("fog_angrate_z_dps", float),
     ("temperature_c", float)
+]
+
+UNLOCK_FLASH_CODE = b'704E2590'
+LOCK_FLASH_CODE = b'1'
+FLASH_UNLOCKED_VALUE = b'Unlocked'
+FLASH_LOCKED_VALUE = b'Locked'
+
+FORMAT_UNL = [
+    ('locked', bytes)
 ]
 
 FORMAT_VER = [
@@ -276,12 +238,12 @@ FORMAT_INS = [
     ("lat_deg", float),
     ("lon_deg", float),
     ("alt_m", float),
-    ("velocity_0_mps", float), #relative to the orientation setting, will be north, east, down in default +X+Y+Z
-    ("velocity_1_mps", float),
-    ("velocity_2_mps", float),
-    ("attitude_0_deg", float),
-    ("attitude_1_deg", float),
-    ("attitude_2_deg", float),
+    ("velocity_north_mps", float), #relative to the orientation setting, will be north, east, down in default +X+Y+Z
+    ("velocity_east_mps", float),
+    ("velocity_down_mps", float),
+    ("roll_deg", float),
+    ("pitch_deg", float),
+    ("heading_deg", float),
     ("zupt_flag", int)
 ]
 
@@ -294,12 +256,12 @@ FORMAT_INS_EXTRA_COMMA = [
     ("lat_deg", float),
     ("lon_deg", float),
     ("alt_m", float),
-    ("velocity_0_mps", float),
-    ("velocity_1_mps", float),
-    ("velocity_2_mps", float),
-    ("attitude_0_deg", float),
-    ("attitude_1_deg", float),
-    ("attitude_2_deg", float),
+    ("velocity_north_mps", float),
+    ("velocity_east_mps", float),
+    ("velocity_down_mps", float),
+    ("roll_deg", float),
+    ("pitch_deg", float),
+    ("heading_deg", float),
     ("zupt_flag", int)
 ]
 
@@ -332,23 +294,15 @@ HEADING_FLAGS = {
     9: "relPos_Normalized",
 }
 
-# put VEH options here so VEH methods can go in IMUBoard. originally in user_progra_config.py
+# put VEH options here so VEH methods can go in IMUBoard. originally in user_program_config.py
 VEH_FIELDS = {
     "GPS Antenna 1    ": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
     "GPS Antenna 2    ": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
-    "Vehicle Center   ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")), #TODO - rename to rear axle center?
+    "Rear Axle Center ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")),
     "Output Center    ": (("x", "ocx"), ("y", "ocy"), ("z", "ocz")),
-    "Odometer Position": (("x", "wsx"), ("y", "wsy"), ("z", "wsz")),
-
-    #"Antenna Baseline": (( "", "bsl"),),
-    #"Baseline Calibration" : (( "", "bcal"),),
     "Antenna Baseline": "bsl",
     "Baseline Calibration": "bcal",
-
-    #"Odometer     " : (("ticks per rev", "tic"), ("wheel radius", "rad")), #to put as one line, edit together
-    #"Ticks per rev ": (("", "tic"), ), #or separate lines
-    #"Wheel radius  ": (("", "rad"), ),
-    "Ticks per rev ": "tic", #or separate lines
+    "Ticks per rev ": "tic",
     "Wheel radius  ": "rad",
 }
 

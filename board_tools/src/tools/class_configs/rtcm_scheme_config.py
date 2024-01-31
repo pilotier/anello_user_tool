@@ -199,12 +199,12 @@ RTCM_INS_PAYLOAD_FIELDS = [
     ("lat_deg", "i", 1e-7), #lat_deg
     ("lon_deg", "i", 1e-7), #lon_deg
     ("alt_m", "i", 1e-3), #alt_m
-    ("velocity_0_mps", "i", 1e-3), #v_n_frac_mps #TODO - these n/e/d names are better than 0/1/2 like in ascii
-    ("velocity_1_mps", "i", 1e-3), #v_e_frac_mps
-    ("velocity_2_mps", "i", 1e-3), #v_d_frac_mps
-    ("attitude_0_deg", "i", 1e-5), #roll_frac_deg #todo - roll/pitch/heading probably better than the ascii 0/1/2
-    ("attitude_1_deg", "i", 1e-5), #pitch_frac_deg
-    ("attitude_2_deg", "i", 1e-5), #head_frac_deg
+    ("velocity_north_mps", "i", 1e-3), #v_n_frac_mps #TODO - these n/e/d names are better than 0/1/2 like in ascii
+    ("velocity_east_mps", "i", 1e-3), #v_e_frac_mps
+    ("velocity_down_mps", "i", 1e-3), #v_d_frac_mps
+    ("roll_deg", "i", 1e-5), #roll_frac_deg #todo - roll/pitch/heading probably better than the ascii 0/1/2
+    ("pitch_deg", "i", 1e-5), #pitch_frac_deg
+    ("heading_deg", "i", 1e-5), #head_frac_deg
     ("zupt_flag", "B"), #zupt_flag
     ("ins_solution_status", "B") #status
 ]

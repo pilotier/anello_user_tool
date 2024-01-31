@@ -8,44 +8,103 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
+
+def column_of_type(frame, column_names, column_type):
+    data_out, description_out = [], ""
+    if column_type == "exit":
+        exit()
+
+    elif column_type == "one column":
+        print("\npick the column:")
+        var_to_plot = column_names[cutie.select(column_names)]
+        column_data = frame[var_to_plot]
+        data_out = column_data
+        description_out = var_to_plot
+
+    elif column_type == "deltas of one column":
+        print("\npick the column:")
+        var_to_plot = column_names[cutie.select(column_names)]
+        column_data = frame[var_to_plot]
+        diff_data = column_data.diff()  # TODO - pad it with a 0 because diff array is one shorter?
+        data_out = diff_data
+        description_out = f"deltas of {var_to_plot}"
+
+    elif column_type == "difference of two columns":
+        print("this will plot column 1 minus column 2")
+        print("\npick column 1")
+        var1 = column_names[cutie.select(column_names)]
+        print("\npick column 2")
+        var2 = column_names[cutie.select(column_names)]
+        # print(f"\nselected {var_to_plot}")
+        differences = frame[var1] - frame[var2]
+        data_out = differences
+        description_out = f"{var1} minus {var2}"
+
+    elif column_type == "ratio of two columns":
+        print("this will plot column 1 divided by column 2")
+        print("\npick column 1")
+        var1 = column_names[cutie.select(column_names)]
+        print("\npick column 2")
+        var2 = column_names[cutie.select(column_names)]
+        # print(f"\nselected {var_to_plot}")
+        ratios = frame[var1] / frame[var2]
+        data_out = ratios
+        description_out = f"{var1} / {var2}"
+
+    # TODO - can add ratios, product, other functions of one or two columns
+
+    # can skip index option since "index" was added to the frame and will appear in column_names selection
+    # elif column_type == "data point number":
+    #     data_out = frame["index"]
+    #     description_out = f"data point number"
+
+    else:
+        print(f"unknown plotting option {column_type}")
+        exit()
+
+    return data_out, description_out
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     root.withdraw()
     in_file_path = askopenfilename(initialdir=None, title="Select csv to plot")
+    root.destroy()
     file_name = os.path.basename(in_file_path)
-    #root.destroy()
     print(f"selected  file: {in_file_path}")
     frame = pd.read_csv(in_file_path)
-    #print(f"\ndata frame:\n{frame}")
+
+    # make a column called "index" with values 0,1,2 etc. warning - may overwrite a csv column called "index"
+    frame.reset_index(inplace=True)
     column_names = [name for name in frame.columns]
 
-    #add choices to plot a column in order, one vs another, deltas of a column, etc
+    main_options = ["one column", "deltas of one column", "difference of two columns", "ratio of two columns", "exit"]
 
-    main_options = ["column in order", "delta", "column vs column", "exit"]
     while True:
-        print("\nwhich kind of plot?")
-        main_action = main_options[cutie.select(main_options)]
-        if main_action == "exit":
-            exit()
-        elif main_action == "column in order":
-            print("\npick a column to plot")
-            var_to_plot = column_names[cutie.select(column_names)]
-            #print(f"\nselected {var_to_plot}")
-            column_data = frame[var_to_plot]
-            #print(f"\ndata to plot:\n{column_data}")
+        print("\n_______pick variables to plot next_______")
 
-            column_data.plot(title=f"{file_name}: {var_to_plot} in order", style=".")
-            #frame.plot(title=f"{var_to_plot} in order", y=[var_to_plot]) #or can plot like this.
-            plt.show()
+        print("\n_______select y (dependent) variable _______")
+        y_type = main_options[cutie.select(main_options)]
+        y_data, y_name = column_of_type(frame, column_names, y_type)
 
-        elif main_action == "delta":
-            print("\npick a column to plot")
-            var_to_plot = column_names[cutie.select(column_names)]
-            # print(f"\nselected {var_to_plot}")
-            column_data = frame[var_to_plot]
-            diff_data = column_data.diff()
-            diff_data.plot(title=f"{file_name}: {var_to_plot} differences", style=".")
-            plt.show()
-        elif main_action == "column vs column":
-            print("not implemented")
+        print("\n_______select x (independent) variable _______")
+        x_type = main_options[cutie.select(main_options)]
+        x_data, x_name = column_of_type(frame, column_names, x_type)
 
+        print(f"plotting [{y_name}] vs [{x_name}]")
+        plot_style = "."  # disconnected dots
+        plt.title(f"{file_name}:\n[{y_name}] vs [{x_name}]")
+        plt.xlabel(x_name)
+        plt.ylabel(y_name)
+        plt.minorticks_on()
+        plt.grid(visible=True, which='major', axis='both')
+        plt.plot(x_data, y_data, color='blue', marker='.', linestyle="None")
+        plt.show()
+
+        # TODO - compute stats on the data too?
+
+        #     print("\npick column to compute stats")
+        #     var1 = column_names[cutie.select(column_names)]
+        #     column_data = frame[var1]
+        #     print(f"stats for {var1}")
+        #     print(f"mean: {}")

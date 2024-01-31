@@ -3,8 +3,6 @@
 
 import os
 import contextlib
-# with open(os.devnull, "w") as f, contextlib.redirect_stdout(f):
-#     print("this should not print")
 import geotiler
 from geotiler.tile.io import fetch_tiles
 from geotiler.cache import caching_downloader
@@ -53,7 +51,8 @@ def draw_map(lat, lon, zoom, map_size, arrow_size, heading_deg, arrow_image_path
 
     #geotiler.cache.caching_downloader(get, set, downloader, tiles, num_workers, **kw)
     my_downloader = partial(caching_downloader, dictionary_get, dictionary_set, fetch_tiles)
-    image = geotiler.render_map(map, downloader=my_downloader)
+    with open(os.devnull, "w") as f, contextlib.redirect_stderr(f):
+        image = geotiler.render_map(map, downloader=my_downloader)
 
     #todo - any map settings like what things to show, language, colors, map scale etc?
 

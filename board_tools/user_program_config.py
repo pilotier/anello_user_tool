@@ -1,5 +1,6 @@
 #__________Main user program configs__________:
 DEBUG = False
+import time
 
 
 def debug_print(text):
@@ -16,7 +17,7 @@ MENU_OPTIONS = [
     "Log",
     "Monitor",
     "NTRIP",
-    "Upgrade",
+    "Firmware Update",
     #"Plot", # put this back in menu when implemented
     "Exit"
 ]
@@ -40,6 +41,7 @@ ERROR_CODES = {
 CFG_CODES_TO_NAMES = {
     "odr":    "Output Data Rate (Hz)                   ",
     "orn":    "Orientation                             ",
+    "aln":    "Alignment Angles                        ",
     "gps1":   "Enable GPS 1                            ",
     "gps2":   "Enable GPS 2                            ",
     "odo":    "Odometer                                ",
@@ -58,7 +60,6 @@ CFG_CODES_TO_NAMES = {
     "lpa":    "Acceleration Low Pass Filter Cutoff (Hz)",
     "lpw":    "MEMS Gyro Low Pass Filter Cutoff (Hz)   ",
     "lpo":    "Optical Gyro Low Pass Filter Cutoff (Hz)",
-    #"nhc":    "Non-Holonomic Constraint                ", #TODO - hide this for now?
     "min":    "Configuration Print Interval (minutes)  ", #TODO - do we want to show this?
     "ntrip":  "NTRIP Input Channel                     ",
     "nmea":   "NMEA GGA output                         ",
@@ -79,8 +80,8 @@ CFG_FIELD_EXAMPLES = {
 
 # fixed list of values to select
 CFG_VALUE_OPTIONS = {
-    "orn": ["North-East-Down (+X+Y+Z)", "East-North-Up (+Y+X-Z)", "Select Other"],
-    "mfm": ["1", "4"], #1 = ASCII, 4 = RTCM. see CFG_VALUE_NAMES
+    "orn": ["+X+Y+Z", "+Y+X-Z", "-X-Y+Z", "+Y-X+Z", "-Y+X+Z", "+X-Y-Z", "-X+Y-Z", "-Y-X-Z"],
+    "mfm": ["1", "4", "0"], #1 = ASCII, 4 = RTCM. see CFG_VALUE_NAMES
     "odr": ["20", "50", "100", "200"],
     "gps1": ["on", "off"],
     "gps2": ["on", "off"],
@@ -90,36 +91,35 @@ CFG_VALUE_OPTIONS = {
     "uart": ["on", "off"],
     "eth": ["on", "off"],
     "sync": ["on", "off"],
-    #"nhc": ["0", "1", "2", "7"], #see CFG_VALUE_NAMES
     "ntrip": ["0", "1", "2"],
     "ptp":  ["off", "master", "slave"],
     "nmea": ["0", "1"],
 }
 
 CFG_VALUE_NAMES = {
-    #only put mfm 1/4 here since we only give customers those options
+    #put only the fully supported formats: ASCII/RTCM/Binary
     ("mfm", "1"): "ASCII",
     ("mfm", "4"): "RTCM",
+    ("mfm", "0"): "Binary",
     #add any others ? eg odometer unit names ("odo", "mph" : "miles per hour")
     ("odo", "mps"): "meters per second",
     ("odo", "mph"): "miles per hour",
     ("odo", "kph"): "kilometers per hour",
     ("odo", "fps"): "feet per second",
-    # ("nhc", "0"): "car/default",
-    # ("nhc", "1"): "truck",
-    # ("nhc", "2"): "agricultural",
-    # ("nhc", "7"): "aerial (no constraint)",
     ("ntrip", "0"): "off",
     ("ntrip", "1"): "serial",
     ("ntrip", "2"): "ethernet",
     ("nmea", "0"): "off",
     ("nmea", "1"): "on",
+    ("orn", "+X+Y+Z"): "+X+Y+Z (Forward-Right-Down)",  # give special names to the two most common orientations.
+    ("orn", "+Y+X-Z"): "+Y+X-Z (Right-Forward-Up)",
 }
 
-#can have notes for just 2 cases now - if more notes needed, do another list or dictionary
+# ORN options, now moved into CFG_VALUE_OPTIONS.
+# used only in user_program_dataonly and user_program_internal - can remove after updating those.
 ORN_8_OPTIONS = [
-    "+X+Y+Z (North-East-Down)",
-    "+Y+X-Z (East-North-Up)",
+    "+X+Y+Z (Forward-Right-Down)",
+    "+Y+X-Z (Right-Forward-Up)",
     "-X-Y+Z",
     "+Y-X+Z",
     "-Y+X+Z",
@@ -131,19 +131,11 @@ ORN_8_OPTIONS = [
 VEH_FIELDS = {
     "GPS Antenna 1    ": (("x", "g1x"), ("y", "g1y"), ("z", "g1z")),
     "GPS Antenna 2    ": (("x", "g2x"), ("y", "g2y"), ("z", "g2z")),
-    "Vehicle Center   ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")), #TODO - rename to rear axle center?
+    "Rear Axle Center ": (("x", "cnx"), ("y", "cny"), ("z", "cnz")),
     "Output Center    ": (("x", "ocx"), ("y", "ocy"), ("z", "ocz")),
-    "Odometer Position": (("x", "wsx"), ("y", "wsy"), ("z", "wsz")),
-
-    #"Antenna Baseline": (( "", "bsl"),),
-    #"Baseline Calibration" : (( "", "bcal"),),
     "Antenna Baseline": "bsl",
     "Baseline Calibration": "bcal",
-
-    #"Odometer     " : (("ticks per rev", "tic"), ("wheel radius", "rad")), #to put as one line, edit together
-    #"Ticks per rev ": (("", "tic"), ), #or separate lines
-    #"Wheel radius  ": (("", "rad"), ),
-    "Ticks per rev ": "tic", #or separate lines
+    "Ticks per rev ": "tic",
     "Wheel radius  ": "rad",
 }
 
@@ -157,6 +149,11 @@ UDP_CACHE = "udp_settings.txt"
 NTRIP_CACHE = "ntrip_settings.txt"
 NTRIP_TIMEOUT_SECONDS = 2
 NTRIP_RETRY_SECONDS = 30
+#NTRIP_READ_SIZE = 2048 # how much it reads from caster at once
+NTRIP_MAX_BYTES_PER_INTERVAL = 5000  # don't send in more that this much data per NTRIP_READ_INTERVAL_SECONDS
+NTRIP_MAX_BYTES_PER_WRITE = 1500  # don't send in more that this much data per write
+NTRIP_READ_INTERVAL_SECONDS = 1  # interval for NTRIP bytes limit
+MAX_SINGLE_NTRIP_MESSAGE_SIZE = 1400  # max size of a single message to send to caster
 
 CONNECT_RETRIES = 3
 RUNNING_RETRIES = 10
@@ -187,8 +184,8 @@ EXPORT_GP2_FIELDS = EXPORT_GPS_FIELDS #make them same for now, but name this so 
 
 EXPORT_INS_FIELDS = ["imu_time_ms", "gps_time_ns", "ins_solution_status",
                      "lat_deg", "lon_deg", "alt_m",
-                     "velocity_0_mps", "velocity_1_mps", "velocity_2_mps",
-                     "attitude_0_deg", "attitude_1_deg", "attitude_2_deg",
+                     "velocity_north_mps", "velocity_east_mps", "velocity_down_mps",
+                     "roll_deg", "pitch_deg", "heading_deg",
                      "zupt_flag", "position_geojson"]
 
 EXPORT_HDG_FIELDS = [
@@ -259,7 +256,8 @@ ZUPT_NAMES = {0: "Moving", 1: "Stationary"}
 #tab 2: map
 
 #sources for map, should be exact string that geotiler.draw_map uses. # TODO : use other names like "Open Street Map" <-> "osm" ?
-MAP_PROVIDERS = ["osm", "stamen-terrain"] #osm and stamen-terrain seem like good options
+# MAP_PROVIDERS = ["osm", "stamen-terrain"] #osm and stamen-terrain seem like good options
+MAP_PROVIDERS = ["osm"]  # stamen not working in geotiler now - put back when it is fixed.
 
 ##all providers in geotiler, for testing. most of these have less detail than osm and stamen-terrain.
 # MAP_PROVIDERS = ["osm", #good default option.

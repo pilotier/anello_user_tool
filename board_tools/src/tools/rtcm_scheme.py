@@ -26,7 +26,7 @@ class RTCM_Scheme(Scheme):
         try:
             stream = RTCMReader(connection)
             message = Message()
-            self.set_fields_general(message, stream.read()[0][1:])
+            self.set_fields_general(message, stream.read()[0])
         except:
             # TODO be more specific about exception
             pass
@@ -41,8 +41,7 @@ class RTCM_Scheme(Scheme):
         try:
             raw, parsed = self.reader.read()
             if raw:
-                data = raw.lstrip(RTCM_PREAMBLE)
-                self.set_fields_general(message, data)
+                self.set_fields_general(message, raw)
             elif parsed is None:  # end of file returns (raw = None, parsed = None)
                 return None
             else:  # errors could return (None, Error Code) but should raise RTCMParseERROR if using ERR_RAISE
@@ -59,10 +58,11 @@ class RTCM_Scheme(Scheme):
     #   Preamble    |   Reserved    |   Length  | msgtype               |   payload     |   CRC
     #   0xD3        | 000000 (6 bit)|   10 bits | 12+4 bit = 2 bytes    |variable length|   3 byte
 
-    def set_fields_general(self, message, full_data):
+    def set_fields_general(self, message, raw_data):
         #split into preamble/lentgh/payload/crc , then check_valid
         try:
             #message.data = data
+            full_data = raw_data[1:]
             length_and_reserved = Bits(full_data[0: LENGTH_LENGTH]) #6 bit reserved zeros, 10 bit lenght - separate them too?
             type_and_subtype = Bits(full_data[LENGTH_LENGTH: LENGTH_LENGTH + TYPE_LENGTH])  # 12+4 bit = 2 bytes. TODO - split them?
             #print(f"type_and_subtype = {type_and_subtype}")
@@ -82,6 +82,7 @@ class RTCM_Scheme(Scheme):
                                   LENGTH_LENGTH + TYPE_LENGTH + payload_length + RTCM_CRC_LEN]
 
             #message.data: up to expected end, ignore extras after. should it do anythinig with the extras?
+            message.raw_data = raw_data
             message.data = full_data[0: LENGTH_LENGTH + TYPE_LENGTH + payload_length + RTCM_CRC_LEN]
             message.checksum = int.from_bytes(checksum_bytes, ENDIAN, signed=True)
             #message.checksum_input = message.rtcm_msgtype + payload_length_b + message.payload #TODO - what goes into checksum?

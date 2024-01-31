@@ -41,6 +41,7 @@ def connect_ntrip(num_retries, on, request, ip, port): #ioloop
             reader = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             reader.settimeout(NTRIP_TIMEOUT_SECONDS) #will this prevent connect_ex? maybe set nonzero before, zero after
             debug_print("connect to ip")
+            debug_print(f"IP:{ip.value.decode()}; port: {port.value}")
             error = reader.connect_ex((ip.value.decode(), port.value)) #timeout mattters for this
             if error == 0:  # not an error
                 #reader.settimeout(None) #keep the timeout in case it has an error after connecting
@@ -112,9 +113,10 @@ def build_gga(gps_message): #ioloop
         # TODO - give an error here? can't make gga without the GPS message
         raise ValueError
     #time: HHMMSS.SS
-    gps_time_s = gps_message.gps_time_ns * 1e-9
-    utc_time = time.strftime("%H%M%S.00", time.gmtime(gps_time_s)).encode() # this loses  the fractional second - does it matter?
-    # still need to convert time?
+    utc_time_s = (gps_message.gps_time_ns * 1e-9) - 18.0 #subtract 18 leap seconds to go from GPS to UTC
+    utc_time = time.strftime("%H%M%S", time.gmtime(utc_time_s)).encode()
+    frac_second_str = f"{utc_time_s % 1:.2f}"[1:].encode() #fractional part starting from decimal point, like ".25"
+    utc_time = utc_time + frac_second_str
 
     # lat: format to DDMM.MMMMM
     lat_float = gps_message.lat_deg
@@ -130,14 +132,19 @@ def build_gga(gps_message): #ioloop
     lon_min = "{:08.5f}".format(60 * abs(lon_float - int(lon_float)))
     lon = (lon_deg+lon_min).encode()
 
-    fixtype = b'4' #dummy - just pretend we got good fix? not sure if it matters
+    carr_soln_conversion = {0: b'1', 1: b'5', 2: b'4'}
+    if gps_message.num_sats >= 4:
+        fixtype = carr_soln_conversion.get(gps_message.carrier_solution_status, b'1') #lookup with default = 1
+    else:
+        fixtype = b'0'
 
-    # numSV: send to 2 digits
-    numsv = "{:0>2d}".format(gps_message.num_sats).encode()
-    HDOP = str(gps_message.PDOP).encode() #not the same but should be close . P.P
-    alt_msl = str(gps_message.alt_msl_m).encode()  # how many digits?
+
+    numsv = "{:0>2d}".format(gps_message.num_sats).encode() # numSV: send to 2 digits
+    HDOP = "{:.2f}".format(gps_message.PDOP).encode() #not the same but should be close.
+    alt_msl = "{:.2f}".format(gps_message.alt_msl_m).encode()  #2 decimal places.
+
     altUnit = b'M'
-    sep = b'' # ntrip example didn't have this, so skip
+    sep = b'' # TODO - should this be alt_msl - alt_ellipsoid_m , opposite of that, or something else?
     sepunit = b'M'
     diffAge = b'' #example didn't have
     diffStation = b''
@@ -146,7 +153,7 @@ def build_gga(gps_message): #ioloop
         altUnit+b','+sep+b','+sepunit+b','+diffAge+b','+diffStation
     checksum = int_to_ascii(ReadableScheme().compute_checksum(payload))
     gga_data = b'$'+payload+b'*'+checksum+b'\r\n'
-    debug_print(gga_data)
+    #debug_print(gga_data)
     return gga_data
 
 #put into logs folder with sub-directory by date, eg: logs/Monday_5_24_2021
@@ -164,7 +171,10 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
             log_on, log_start, log_stop, log_name,
             ntrip_on, ntrip_start, ntrip_stop, ntrip_succeed,
             ntrip_ip, ntrip_port, ntrip_gga, ntrip_req,
-            last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg):
+            last_ins_msg, last_gps_msg, last_gp2_msg, last_imu_msg, last_hdg_msg,
+            last_imu_time,
+            shared_serial_number
+    ):
 
     data_connection = None
     ntrip_reader = None
@@ -174,12 +184,19 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
     flush_counter=0
     #last_valid_gps = None
     ascii_scheme = ReadableScheme()
-    binary_scheme = RTCM_Scheme()
+    binary_scheme = Binary_Scheme()
+    rtcm_scheme = RTCM_Scheme()
+    serialnum = ""
+
+    last_ntrip_read_window_time = time.time()
+    ntrip_bytes_count = 0
 
     buffered_partial_message = b''
 
     while True:
         time.sleep(1e-3) #slow down loop to reduce cpu use, 1 ms wait should be fine
+
+        serialnum = shared_serial_number.value.decode()
         #first handle all start/stop signals.
         if con_stop.value: #TODO - currently not using this since I release before new connection anyway
             debug_print("io_loop con stop")
@@ -256,19 +273,58 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                     debug_print("ntrip reconnect failed")
 
         if ntrip_on.value and con_on.value and data_connection and ntrip_reader and ntrip_reader.fileno() >= 0:
-            #print("ntrip work to do")
             try:
-                #this select can raise ValueError when ntrip turns off, but fileno() >=0 check should prevent it.
+                # read and send the NTRIP data as fast as possible, without altering or parsing
+                # but limit the total data to 10,000 bytes in 1 second window.
+
+                # every 1 second , set NTRIP read counter to 0 and reset the timer
+                current_time = time.time()
+                time_since_last_read_window = current_time - last_ntrip_read_window_time
+                #debug_print(f"time since last read window: {time_since_last_read_window}")
+                if time_since_last_read_window >= NTRIP_READ_INTERVAL_SECONDS:
+                    last_ntrip_read_window_time = current_time
+                    debug_print(f"ntrip read interval of {time_since_last_read_window :.2f} seconds had {ntrip_bytes_count} bytes")
+                    ntrip_bytes_count = 0
+
+                # read NTRIP data if there is any (select.select check)
+                # don't read if we already exceeded the allowed bytes in 1 second -> wait for next cycle
+                # this select can raise ValueError when ntrip turns off, but fileno() >=0 check should prevent it.
                 reads, writes, errors = select.select([ntrip_reader], [], [], 0)
-                # ntrip data incoming -> take it and send to data connection.
-                if ntrip_reader in reads:
-                    ntrip_data = ntrip_reader.recv(1024) #TODO can this block logging? hopefully not at timeout 0.
+                if ntrip_reader in reads and (ntrip_bytes_count <= NTRIP_MAX_BYTES_PER_INTERVAL):
+                    # use max bytes per interval as the max read size too. so if more than that much data arrives at once, send none.
+                    ntrip_data = ntrip_reader.recv(NTRIP_MAX_BYTES_PER_INTERVAL+1) # TODO can this block logging? hopefully not at timeout 0.
+                    read_length = len(ntrip_data)
+                    ntrip_bytes_count += read_length
+
                     if not ntrip_data:
                         #empty read means disconnected: go to the catch
                         raise ConnectionResetError
-                    debug_print("\nntrip data (len "+str(len(ntrip_data))+"):\n")
-                    #debug_print(ntrip_data)
-                    data_connection.write(ntrip_data)
+
+                    # if read reaches the max size, discard it to avoid flooding ublox. then discard all available data.
+                    if ntrip_bytes_count <= NTRIP_MAX_BYTES_PER_INTERVAL:
+                        # send all the data in 1024 byte chunks
+                        debug_print("writing ntrip data (len "+str(read_length)+"):")
+                        for i in range(0, read_length, NTRIP_MAX_BYTES_PER_WRITE):
+                            if i + NTRIP_MAX_BYTES_PER_WRITE > read_length:
+                                debug_print(f"writing {read_length - i} bytes")
+                                data_connection.write(ntrip_data[i:read_length])
+                            else:
+                                debug_print(f"writing {NTRIP_MAX_BYTES_PER_WRITE} bytes")
+                                data_connection.write(ntrip_data[i:i+NTRIP_MAX_BYTES_PER_WRITE])
+
+                        debug_print("")
+
+                    else:
+                        debug_print(f"\nNTRIP hit limit of {NTRIP_MAX_BYTES_PER_INTERVAL} bytes in {NTRIP_READ_INTERVAL_SECONDS} seconds")
+                        debug_print("clearing all NTRIP data with repeated read until empty")
+                        last_data = ntrip_data
+                        while len(last_data) > 0:
+                            try:
+                                last_data = ntrip_reader.recv(NTRIP_MAX_BYTES_PER_INTERVAL)
+                                print(f"clearing NTRIP: read length = {len(last_data)}")
+                                # TODO limit iterations to avoid infinite loop? should terminate since timeout is 0.
+                            except Exception as e:  # BlockingIOError for read when not read -> should be clear.
+                                break
             except ConnectionResetError:
                 debug_print("ntrip disconnected")
                 ntrip_on.value = 0
@@ -288,34 +344,38 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
 
                     #use readall to make sure it's up to date. could read one or multiple messages.
                     in_data = data_connection.readall()
-                    debug_print(f"\nin data: <{in_data}>")
+                    #debug_print(f"\nin data: <{in_data}>")
 
                     data_for_monitor = buffered_partial_message + in_data # combine with any leftover data
-                    debug_print(f"data for monitor: {data_for_monitor}")
+                    # debug_print(f"\ndata for monitor: {data_for_monitor}")
 
                     #try handling as ascii and rtcm and do whichever works. TODO - make a combined parser?
                     last_parts_all_formats = []
 
-                    for parse_scheme, start_char in [(ascii_scheme, READABLE_START), (binary_scheme, RTCM_PREAMBLE)]:
+                    for parse_scheme, start_char in [(ascii_scheme, READABLE_START), (rtcm_scheme, RTCM_PREAMBLE), (binary_scheme, BINARY_PREAMBLE)]:
                         parts = data_for_monitor.split(start_char) #TODO - do a read_one_message from buffer instead? this will split on start char in message.
-                        debug_print(f"parts splitting on {start_char}:")
+                        #debug_print(f"parts splitting on {start_char}:")
                         for part in parts:
-                            debug_print(f"\t{part}")
+                            #debug_print(f"\t{part}")
+                            part = start_char + part
                             last_msg = parse_scheme.parse_message(part)
                             #print(f"last_msg: {last_msg}")
                             if not last_msg.valid:
+                                #debug print invalid?
                                 continue #todo - could try to recombine split messages here.
                             #debug_print(last_msg)
                             elif last_msg.msgtype == b'INS':
                                 last_ins_msg.value = part #send valid INS message to monitor
-                                #print(f"\nlast_ins_msg {type(parse_scheme)}:\n{part}")
+                                #debug_print(f"\nlast_ins_msg {type(parse_scheme)}:\n{last_msg}")
                             elif last_msg.msgtype in [b'IMU', b'IM1']:
+                                last_imu_time.value = last_msg.imu_time_ms
                                 last_imu_msg.value = part #send valid IMU message to monitor
-                                #print(f"\nlast_imu_msg {type(parse_scheme)}:\n{last_msg}")
+                                #debug_print(f"\nlast_imu_msg {type(parse_scheme)}:\n{last_msg}")
                             elif last_msg.msgtype == b'HDG':
                                 last_hdg_msg.value = part
+                                #debug_print(f"\nlast_hdg_msg {type(parse_scheme)}:\n{last_msg}")
                             elif last_msg.msgtype == b'GPS':
-                                #print(f"\nlast_gps_msg {type(parse_scheme)}:\n{part}")
+                                #debug_print(f"\nlast_gps_msg {type(parse_scheme)}:\n{last_msg}")
                                 last_gps_msg.value = part # save if needed for ntrip start or delayed sending
                                 gps_received.value = 1 #will allow setting gga on in ntrip
                                 #build and send GGA message if ntrip on
@@ -336,7 +396,7 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                         if last_msg.valid:
                             last_parts_all_formats.append(b'') # empty 'last part' if complete, so it is shortest
                         else:
-                            debug_print(f"\ninvalid last part for {start_char}: {last_part}\n")
+                            #debug_print(f"\ninvalid last part for {start_char}: {last_part}\n")
                             #print(f"invalid last message: {last_msg}")
                             last_parts_all_formats.append(last_part)
 
@@ -344,7 +404,7 @@ def io_loop(exitflag, con_on, con_start, con_stop, con_succeed,
                     # TODO - could this be wrong if # appears in RTCM message? may need other check for right format.
                     #print(f"last_parts_all_formats: {last_parts_all_formats}")
                     last_part = min(last_parts_all_formats, key=lambda x: len(x))
-                    debug_print(f"\nsmaller last part: {last_part}")
+                    #debug_print(f"\nsmaller last part: {last_part}")
                     buffered_partial_message = last_part
 
                     if log_on and log_file: #TODO - what about close in mid-write? could pass message and close here. or catch exception
