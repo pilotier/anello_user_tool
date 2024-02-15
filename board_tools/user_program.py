@@ -12,6 +12,8 @@ with open(os.devnull, "w") as f, redirect_stdout(f):
     import serial
     from multiprocessing import Array, Value, Process, Manager
     import base64
+    import zmq
+    import json
     import socket
     import select
     from user_program_config import *
@@ -1187,8 +1189,20 @@ class UserProgram:
             for text_item in [time_since_gps_label, time_since_gps, odo_label, odo_value]:
                 text_item.update(visible=False) #text elements have no "disabled". could check if hasattr("disabled")
 
+        ## JT - ADD ZMQ PUBLISHER
+                
+        context = zmq.Context()
+        socket = context.socket(zmq.PUB)
+        socket.bind("tcp://127.0.0.1:9004")
+        topic = "anello"
+
+        json_out = {"heading_imu": None, "heading_gnss": None, "lat1" : None, "lng1": None}
+
         # update loop: check for new messages or button clicks, then update the displayed data
         while True:
+            if json_out["heading_imu"] is not None and json_out["lat1"] is not None and json_out["lng1"] is not None and json_out["heading_gnss"] is not None:
+                socket.send_string(topic, zmq.SNDMORE)
+                socket.send_json(json_out)
 
             event, values = window.read(timeout=MONITOR_REFRESH_MS, timeout_key="timeout")
             active_tab = tab_group.get() #check this early so it can update only the active tab
@@ -1264,6 +1278,12 @@ class UserProgram:
 
                     ins_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_ins_msg.raw)
                     #print(f"\nins_msg: {ins_msg}")
+
+                    #Simple json for now. 
+                    json_out["heading_gnss"] = ins_msg.heading_deg if hasattr(ins_msg, "heading_deg") else json_out["heading_gnss"] 
+                    json_out["lat1"] = ins_msg.lat_deg if hasattr(ins_msg, "lat_deg") else json_out["lat1"]
+                    json_out["lng1"] = ins_msg.lon_deg if hasattr(ins_msg, "lon_deg") else json_out["lng1"]
+
 
                     #update numbers display if active
                     if active_tab == "numbers-tab":
@@ -1474,6 +1494,8 @@ class UserProgram:
                     # last_last_imu = self.last_imu_msg.value
                     last_last_hdg = self.last_hdg_msg.raw
                     last_hdg_time = time.time()
+                    json_out["heading_imu"] = ins_msg.heading_deg if hasattr(ins_msg, "relPosHeading_deg") else json_out["heading_imu"] 
+
                     if active_tab == 'hdg-tab':
                         hdg_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_hdg_msg.raw)
                         #print(f"new heading message: {hdg_msg}")
