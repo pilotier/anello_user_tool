@@ -15,7 +15,7 @@ with open(os.devnull, "w") as f, redirect_stdout(f):
     import zmq
     import json
     import socket
-    import select
+    import selectf
     from user_program_config import *
     from version_num import PROGRAM_VERSION
     from ioloop import *
@@ -1194,15 +1194,18 @@ class UserProgram:
         context = zmq.Context()
         socket = context.socket(zmq.PUB)
         socket.bind("tcp://127.0.0.1:9004")
-        topic = "anello"
+        #topic = "anello"
 
-        json_out = {"heading_imu": None, "heading_gnss": None, "lat1" : None, "lng1": None}
-
+        #json_out = {"heading_imu": None, "heading_gnss": None, "lat1" : None, "lng1": None}
+        json_out = {"gps_time" : None, "lat_deg": None, "lon_deg": None, "alt_m": None, "velocity_north_mps": None, "velocity_east_mps":None, "velocity_down_mps": None, "roll_deg": None, "pitch_deg": None, "heading_deg": None}
         # update loop: check for new messages or button clicks, then update the displayed data
         while True:
-            if json_out["heading_imu"] is not None and json_out["lat1"] is not None and json_out["lng1"] is not None and json_out["heading_gnss"] is not None:
-                socket.send_string(topic, zmq.SNDMORE)
+
+
+            if all(value is not None for value in json_out.values()):
                 socket.send_json(json_out)
+            else:
+                print("Not all json fields are filled")
 
             event, values = window.read(timeout=MONITOR_REFRESH_MS, timeout_key="timeout")
             active_tab = tab_group.get() #check this early so it can update only the active tab
@@ -1280,10 +1283,18 @@ class UserProgram:
                     #print(f"\nins_msg: {ins_msg}")
 
                     #Simple json for now. 
-                    json_out["heading_gnss"] = ins_msg.heading_deg if hasattr(ins_msg, "heading_deg") else json_out["heading_gnss"] 
-                    json_out["lat1"] = ins_msg.lat_deg if hasattr(ins_msg, "lat_deg") else json_out["lat1"]
-                    json_out["lng1"] = ins_msg.lon_deg if hasattr(ins_msg, "lon_deg") else json_out["lng1"]
+                    json_out["roll_deg"] = ins_msg.roll_deg if hasattr(ins_msg, "roll_deg") else json_out["roll_deg"]
+                    json_out["pitch_deg"] = ins_msg.pitch_deg if hasattr(ins_msg, "pitch_deg") else json_out["pitch_deg"]
+                    json_out["heading_deg"] = ins_msg.heading_deg if hasattr(ins_msg, "heading_deg") else json_out["heading_deg"] 
 
+                    json_out["lat_deg"] = ins_msg.lat_deg if hasattr(ins_msg, "lat_deg") else json_out["lat_deg"]
+                    json_out["lon_deg"] = ins_msg.lon_deg if hasattr(ins_msg, "lon_deg") else json_out["lon_deg"]
+                    json_out["alt_m"] = ins_msg.alt_m if hasattr(ins_msg, "alt_m") else json_out["alt_m"]
+
+                    json_out["velocity_north_mps"] = ins_msg.velocity_north_mps if hasattr(ins_msg, "velocity_north_mps") else json_out["velocity_north_mps"]
+                    json_out["velocity_east_mps"] = ins_msg.velocity_east_mps if hasattr(ins_msg, "velocity_east_mps") else json_out["velocity_east_mps"]
+                    json_out["velocity_down_mps"] = ins_msg.velocity_down_mps if hasattr(ins_msg, "velocity_down_mps") else json_out["velocity_down_mps"]
+                    
 
                     #update numbers display if active
                     if active_tab == "numbers-tab":
