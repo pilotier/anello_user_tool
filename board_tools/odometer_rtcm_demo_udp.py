@@ -15,7 +15,7 @@
 import socket
 import select
 
-A1_ip = "10.1.10.107" #CHANGE TO: address of your unit on the network - see user configurations.
+A1_ip = "192.168.1.69" #CHANGE TO: address of your unit on the network - see user configurations.
 data_udp_port = 1111 #CHANGE TO: "udp computer data port" configuration
 odometer_udp_port = 3333  #CHANGE TO: "udp computer config port" or "udp computer odometer port" configuration
 

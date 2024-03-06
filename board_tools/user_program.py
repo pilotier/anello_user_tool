@@ -15,7 +15,7 @@ with open(os.devnull, "w") as f, redirect_stdout(f):
     import zmq
     import json
     import socket
-    import selectf
+    import select
     from user_program_config import *
     from version_num import PROGRAM_VERSION
     from ioloop import *
@@ -1191,21 +1191,23 @@ class UserProgram:
 
         ## JT - ADD ZMQ PUBLISHER
                 
-        context = zmq.Context()
-        socket = context.socket(zmq.PUB)
-        socket.bind("tcp://127.0.0.1:9004")
+        # context = zmq.Context()
+        # socket = context.socket(zmq.PUB)
+        # socket.bind("tcp://192.168.1.2:9004")
         #topic = "anello"
 
         #json_out = {"heading_imu": None, "heading_gnss": None, "lat1" : None, "lng1": None}
-        json_out = {"gps_time" : None, "lat_deg": None, "lon_deg": None, "alt_m": None, "velocity_north_mps": None, "velocity_east_mps":None, "velocity_down_mps": None, "roll_deg": None, "pitch_deg": None, "heading_deg": None}
+        json_out = {"gps_time_ns" : None, "lat_deg": None, "lon_deg": None, "alt_m": None, "velocity_north_mps": None, "velocity_east_mps":None, "velocity_down_mps": None, "roll_deg": None, "pitch_deg": None, "heading_deg": None}
         # update loop: check for new messages or button clicks, then update the displayed data
         while True:
 
 
             if all(value is not None for value in json_out.values()):
-                socket.send_json(json_out)
+                print("Sending json")
             else:
                 print("Not all json fields are filled")
+            # socket.send_json(json_out)
+
 
             event, values = window.read(timeout=MONITOR_REFRESH_MS, timeout_key="timeout")
             active_tab = tab_group.get() #check this early so it can update only the active tab
@@ -1294,6 +1296,7 @@ class UserProgram:
                     json_out["velocity_north_mps"] = ins_msg.velocity_north_mps if hasattr(ins_msg, "velocity_north_mps") else json_out["velocity_north_mps"]
                     json_out["velocity_east_mps"] = ins_msg.velocity_east_mps if hasattr(ins_msg, "velocity_east_mps") else json_out["velocity_east_mps"]
                     json_out["velocity_down_mps"] = ins_msg.velocity_down_mps if hasattr(ins_msg, "velocity_down_mps") else json_out["velocity_down_mps"]
+                    json_out["gps_time_ns"] = ins_msg.gps_time_ns if hasattr(ins_msg, "gps_time_ns") else json_out["gps_time_ns"]
                     
 
                     #update numbers display if active
@@ -1505,7 +1508,7 @@ class UserProgram:
                     # last_last_imu = self.last_imu_msg.value
                     last_last_hdg = self.last_hdg_msg.raw
                     last_hdg_time = time.time()
-                    json_out["heading_imu"] = ins_msg.heading_deg if hasattr(ins_msg, "relPosHeading_deg") else json_out["heading_imu"] 
+                    #json_out["heading_imu"] = ins_msg.heading_deg if hasattr(ins_msg, "relPosHeading_deg") else json_out["heading_imu"] 
 
                     if active_tab == 'hdg-tab':
                         hdg_msg = try_multiple_parsers([binary_scheme, ascii_scheme, rtcm_scheme], self.last_hdg_msg.raw)

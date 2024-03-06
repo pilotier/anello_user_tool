@@ -9,7 +9,7 @@ import socket
 from time import sleep
 from random import uniform
 
-A1_ip = "192.168.1.111" #"10.1.10.21" #address of your unit on the network - see user configurations.
+A1_ip = "192.168.1.69" #"10.1.10.21" #address of your unit on the network - see user configurations.
 
 odometer_udp_port, A1_udp_port = 3333, 3 #computer's port for odometer messages. should match user configuration
 #odometer_udp_port, A1_udp_port = 2222, 2 #config port

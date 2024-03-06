@@ -18,6 +18,7 @@ while True:
     try:
         speed = 22.5 #replace with speed from your odometer
         A1.send_odometer(speed) #creates and sends APODO messsage with that speed
+        print("sent odometer message")
         sleep(0.05) #can remove this if you wait for odometer data
     except: #ctrl-c to end
         A1.release_connections() #release serial connections
