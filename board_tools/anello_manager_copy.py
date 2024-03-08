@@ -20,14 +20,6 @@ import socket
 from time import sleep
 from random import uniform
 
-# def calculate_checksum(data):
-#     """Calculate the XOR checksum for the given data."""
-#     checksum = 0
-#     for char in data:
-#         checksum ^= ord(char)
-#     return checksum
-
-
 def calculate_checksum(data):
     checksum = 0
     for byte in data:
@@ -83,28 +75,18 @@ def parse_apins_message(message):
     return apins_data
 
 def main():
-    UDP_IP = "192.168.1.2"
+    UDP_IP = "192.168.1.1"
     UDP_PORT = 1111
-    ctx = zmq.Context()
-    pub_sox = ctx.socket(zmq.PUB)
-    pub_sox.bind("tcp://192.168.1.2:9004")
-    can_socket = ctx.socket(zmq.SUB)
-    can_socket.connect("tcp://127.0.0.1:4444")
-    can_socket.setsockopt_string(zmq.SUBSCRIBE, "")
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((UDP_IP, UDP_PORT))
     
     print(f"Listening for APINS messages on UDP port {UDP_PORT}...")
     
-    speed = 0 #m/s
-    
-    A1 = IMUBoard.auto(set_data_port=False) #auto-detect unit on serial ports
-    
+        
     print("Starting main loop...")
-    last_time = time.time()
+
     while True:
         try:
-            starttime = time.time()
             data, addr = sock.recvfrom(1024)  # buffer size is 1024 bytes
             message = data.decode('ascii', errors='ignore')
             
@@ -112,25 +94,10 @@ def main():
                 if validate_checksum(message.strip()):
                     if message.startswith('#APINS,'):
                         apins_data = parse_apins_message(message[1:].split('*')[0])
-                        #print("APINS Data:", apins_data)
-                        pub_sox.send_json(apins_data)  
+                        print("APINS Data:", apins_data)
                 else:
                     print("Invalid checksum. Message ignored.")
-            try: 
-                while True: 
-                    try: 
-                        car_data = can_socket.recv_json(flags=zmq.NOBLOCK)
-                        speed = car_data['wheel_speed']
-                    except zmq.Again:
-                        break #no more messages... 
-            except json.JSONDecodeError:
-                continue
-            elapsed = time.time() - starttime
-            if starttime - last_time > 0.033: 
-                last_time = time.time()
-                A1.send_odometer(speed)
-                print(speed)
-
+    
         except KeyboardInterrupt: 
             A1.release_connections() #release serial connections
             exit()
