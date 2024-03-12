@@ -129,7 +129,7 @@ def main():
             if starttime - last_time > 0.033: 
                 last_time = time.time()
                 A1.send_odometer(speed)
-                print(speed)
+                #print(speed)
 
         except KeyboardInterrupt: 
             A1.release_connections() #release serial connections
